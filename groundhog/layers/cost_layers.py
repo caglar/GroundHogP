@@ -19,7 +19,8 @@ from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
 
 from groundhog import utils
 from groundhog.utils import sample_weights, sample_weights_classic,\
-    init_bias, constant_shape, sample_zeros
+                            sample_weights_orth, init_bias, constant_shape,\
+                            sample_zeros
 
 from basic import Layer
 
@@ -549,7 +550,7 @@ class LinearLayer(CostLayer):
 
     def get_cost(self, state_below, target=None, mask = None, temp=1,
                  reg = None, scale=None, sum_over_time=True, use_noise=True,
-                additional_inputs=None):
+                 additional_inputs=None):
         """
         This function computes the cost of this layer.
 
@@ -559,14 +560,18 @@ class LinearLayer(CostLayer):
             layer
         :return: mean cross entropy
         """
+
         class_probs = self.fprop(state_below, temp = temp,
                                  use_noise=use_noise,
-                                additional_inputs=additional_inputs)
+                                 additional_inputs=additional_inputs)
+
         pvals = class_probs
         assert target, 'Computing the cost requires a target'
+
         if target.ndim == 3:
             target = target.reshape((target.shape[0]*target.shape[1],
                                     target.shape[2]))
+
         assert 'float' in target.dtype
         cost = (class_probs - target)**2
         if mask:
@@ -580,9 +585,9 @@ class LinearLayer(CostLayer):
                              theano.config.floatX)
                 sh1 = TT.cast(state_below.shape[1],
                              theano.config.floatX)
-                self.cost = cost.sum()/sh1
+                self.cost = cost.sum() / sh1
             else:
-                self.cost =cost.sum()
+                self.cost = cost.sum()
         else:
             self.cost = cost.mean()
         if scale:
@@ -1159,3 +1164,232 @@ class SoftmaxLayer(CostLayer):
         self.mask = mask
         self.cost_scale = scale
         return self.cost
+
+
+class MultiSoftmaxClassificationLayer(CostLayer):
+    """
+        Twin softmax layer.
+    """
+    def __init__(self,
+                 noutputs,
+                 nsofts,
+                 cost_scales,
+                 *args,
+                 **kwargs):
+
+        self.noutputs = noutputs
+        self.nsofts = nsofts
+        self.kwargs = kwargs
+        self.cost_scales = cost_scales
+        self.softouts = []
+        self.costs = []
+
+        for i in xrange(nsofts):
+            kwargs["n_out"] = noutputs[i]
+            kwargs["name"] = "out_layer_" + str(i)
+            softlayer = SoftmaxLayer(*args, **kwargs)
+            self.softouts.append(softlayer)
+        super(MultiSoftmaxClassificationLayer, self).__init__(*args, **kwargs)
+
+        self.params_grad_scale = []
+
+        self.params = []
+        for i in xrange(nsofts):
+            self.params += self.softouts[i].params
+            self.params_grad_scale += self.softouts[i].params_grad_scale
+    def fprop(self,
+              state_below,
+              temp=numpy.float32(1),
+              use_noise=True,
+              additional_inputs=None,
+              no_noise_bias=False,
+              hints=None,
+              target=None,
+              full_softmax=True):
+        """
+        Forward pass through the cost layer.
+
+        :type state_below: tensor or layer
+        :param state_below: The theano expression (or groundhog layer)
+            representing the input of the cost layer
+
+        :type temp: float or tensor scalar
+        :param temp: scalar representing the temperature that should be used
+            when sampling from the output distribution
+
+        :type use_noise: bool
+        :param use_noise: flag. If true, noise is used when computing the
+            output of the model
+
+        :type no_noise_bias: bool
+        :param no_noise_bias: flag, stating if weight noise should be added
+            to the bias as well, or only to the weights
+        """
+        outputs = []
+        print("nsofts, ", self.nsofts)
+        for i in xrange(self.nsofts):
+            out = self.softouts[i].fprop(state_below,
+                                         temp=temp,
+                                         use_noise=use_noise,
+                                         additional_inputs=additional_inputs,
+                                         no_noise_bias=no_noise_bias,
+                                         target=target,
+                                         full_softmax=full_softmax)
+            outputs.append(out)
+        self.out = outputs
+        self.model_output = outputs
+        self.state_below = state_below
+        return outputs
+
+    def get_cost(self,
+                 state_below,
+                 target=None,
+                 hints=None,
+                 mask=None,
+                 temp=1,
+                 reg=None,
+                 scale=None,
+                 sum_over_time=False,
+                 no_noise_bias=False,
+                 additional_inputs=None,
+                 use_noise=True):
+        """
+        See parent class
+        """
+        def _grab_probs(class_probs, target):
+            shape0 = class_probs.shape[0]
+            shape1 = class_probs.shape[1]
+            target_ndim = target.ndim
+            target_shape = target.shape
+
+            if target.ndim > 1:
+                target = target.flatten()
+
+            assert target.ndim == 1, 'make sure target is a vector of ints'
+            assert 'int' in target.dtype
+
+            pos = TT.arange(shape0)*shape1
+            new_targ = target + pos
+
+            return class_probs.flatten()[new_targ]
+
+        assert target, 'Computing the cost requires a target'
+
+        target_shape = target.shape
+        target_ndim = target.ndim
+        hints_shape = hints.shape
+
+        target_shapes = [target_shape,
+                         hints_shape]
+
+        class_probses = self.fprop(state_below,
+                                   temp=temp,
+                                   use_noise=use_noise,
+                                   additional_inputs=additional_inputs,
+                                   no_noise_bias=no_noise_bias)
+
+        costs = []
+        targets = [target, hints]
+
+        for class_probs, target in zip(class_probses, targets):
+            cost = -TT.log(_grab_probs(class_probs, target))
+            costs.append(cost)
+
+        self.costs = costs
+        self.word_probses = []
+
+        #for cost, target_shape in zip(costs, target_shapes):
+        #    self.word_probses.append(self.TT.exp(-cost.reshape(target_shape)))
+
+        # Set all the probs after the end-of-line to one
+        # if mask:
+        #    for i in xrange(len(self.word_probses)):
+        #        self.word_probses[i] = self.word_probses[i] * mask + 1 - mask
+
+        if mask:
+            for i in xrange(len(self.costs)):
+                self.costs[i] = self.costs[i] * TT.cast(mask.flatten(), theano.config.floatX)
+
+        for csi in xrange(len(self.cost_scales)):
+            self.costs[csi] = self.cost_scales[csi] * self.costs[csi]
+
+        if sum_over_time is None:
+            sum_over_time = self.sum_over_time
+
+        if sum_over_time:
+            if state_below.ndim == 3:
+                for i in xrange(len(self.costs)):
+                    self.costs[i] = self.costs[i].reshape((state_below.shape[0],
+                                         state_below.shape[1]))
+                    self.costs[i] = self.costs[i].mean(1).sum()
+            else:
+                for i in xrange(len(self.costs)):
+                    self.costs[i] = self.costs[i].sum()
+        else:
+            for i in xrange(len(self.costs)):
+                self.costs[i] = self.costs[i].mean()
+
+        if scale:
+            for i in xrange(len(self.costs)):
+                self.costs[i] = self.costs[i]*scale
+
+        if reg:
+            for i in xrange(len(self.costs)):
+                self.costs[i] = self.cost[i] + reg
+
+        self.mask = mask
+        self.cost_scale = scale
+        self.cost = sum(self.costs)
+        return self.cost
+
+    def get_grads(self,
+                  state_below,
+                  target=None,
+                  hints=None,
+                  mask=None,
+                  temp=1,
+                  reg=None,
+                  scale=None,
+                  additional_gradients=None,
+                  sum_over_time=None,
+                  use_noise=True,
+                  additional_inputs=None,
+                  no_noise_bias=False):
+
+        cost = self.get_cost(state_below,
+                             target,
+                             hints=hints,
+                             mask=mask,
+                             reg=reg,
+                             scale=scale,
+                             sum_over_time=sum_over_time,
+                             use_noise=use_noise,
+                             additional_inputs=additional_inputs,
+                             no_noise_bias=no_noise_bias)
+
+        logger.debug("Get grads")
+        grads = TT.grad(cost.mean(), self.params)
+        logger.debug("Got grads")
+        if additional_gradients:
+            for p, gp in additional_gradients:
+                if p in self.params:
+                    grads[self.params.index(p)] += gp
+
+        if self.additional_gradients:
+            for new_grads, to_replace, properties in self.additional_gradients:
+                gparams, params = new_grads
+                prop_expr = [x[1] for x in properties]
+                replace = [(x[0], TT.grad(cost, x[1])) for x in to_replace]
+                rval = theano.clone(gparams + prop_expr,
+                                    replace=replace)
+                gparams = rval[:len(gparams)]
+                prop_expr = rval[len(gparams):]
+                self.properties += [(x[0], y)
+                                    for x, y in zip(properties, prop_expr)]
+                for gp, p in zip(gparams, params):
+                    grads[self.params.index(p)] += gp
+
+        self.cost = cost
+        self.grads = grads
+
+        return cost, grads

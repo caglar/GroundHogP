@@ -80,8 +80,7 @@ class LMIterator(object):
         :param can_fit: Flag saying if the dataset fits in memory or not
         """
 
-        assert type(path) is not None, "Target language file should be a list."
-
+        assert type(path) == str, "Target language path should be a list."
 
         self.reset = reset
         self.batch_size = batch_size
@@ -111,7 +110,6 @@ class LMIterator(object):
         self.penn_nwords = penn_data["n_words"] if 'n_words' in penn_data else 0
         self.penn_nchars = penn_data["n_chars"] if 'n_chars' in penn_data else 0
 
-
         if self.chunks == "words":
             self.n_in = self.penn_nwords
             self.n_out = self.penn_nwords
@@ -136,9 +134,11 @@ class LMIterator(object):
             elif self.mode == "test":
                 self.data = penn_data['test_chars']
                 self.data_len = self.data.shape[0]
+
         if self.reset is not None and self.reset > 0:
             self.data = self.data[:self.reset]
             self.data_len = self.data.shape[0]
+
         print "data length is ", self.data_len
         del penn_data
 

@@ -107,6 +107,7 @@ class LM_Model(Model):
             self.exclude_params_for_norm = []
         else:
             self.exclude_params_for_norm = exclude_params_for_norm
+
         self.need_inputs_for_generating_noise=need_inputs_for_generating_noise
         self.cost_layer = cost_layer
         self.validate_step = valid_fn
@@ -117,6 +118,7 @@ class LM_Model(Model):
         self.character_level = character_level
 
         self.valid_costs = ['cost','ppl']
+
         # Assume a single cost
         # We need to merge these lists
         state_below = self.cost_layer.state_below
@@ -124,14 +126,16 @@ class LM_Model(Model):
             num_words = TT.sum(self.cost_layer.mask)
         else:
             num_words = TT.cast(state_below.shape[0], 'float32')
+
         scale = getattr(self.cost_layer, 'cost_scale', numpy.float32(1))
         if not scale:
             scale = numpy.float32(1)
-        scale *= numpy.float32(numpy.log(2))
 
+        scale *= numpy.float32(numpy.log(2))
         grad_norm = TT.sqrt(sum(TT.sum(x**2)
             for x,p in zip(self.param_grads, self.params) if p not in
                 self.exclude_params_for_norm))
+
         new_properties = [
                 ('grad_norm', grad_norm),
                 ('log2_p_word', self.train_cost / num_words / scale),

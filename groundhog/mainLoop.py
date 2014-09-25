@@ -275,9 +275,12 @@ class MainLoop(object):
 
         last_cost = 1.
         self.state['clr'] = self.state['lr']
-        self.train_data.start(self.timings['next_offset']
-                if 'next_offset' in self.timings
-                else -1)
+        #self.train_data.start(self.timings['next_offset']
+        #        if 'next_offset' in self.timings
+        #        else -1)
+
+        #if 'next_offset' in self.timings:
+        #    self.train_data.start(self.timings['next_offset'])
 
         while (self.step < self.state['loopIters'] and
                last_cost > .1*self.state['minerr'] and

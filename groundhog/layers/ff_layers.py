@@ -19,6 +19,7 @@ from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
 from groundhog import utils
 from groundhog.utils import sample_weights, \
             sample_weights_classic,\
+            sample_weights_orth,\
             init_bias, \
             constant_shape, \
             sample_zeros

@@ -286,7 +286,14 @@ class Layer(Container):
             raise ValueError('I do not know how to compute the gradients'
                              ' of the subtracted term' + str(other) + '. Call'
                              ' train on it if it is an output layer')
-        new_obj.out = new_obj.out * other_var
+
+        if type(new_obj.out) == list:
+            outs = new_obj.out
+            for out in outs:
+                out = out * other_var
+        else:
+            new_obj.out = new_obj.out * other_var
+
         return new_obj
 
 
@@ -314,7 +321,13 @@ class Layer(Container):
             raise ValueError('I do not know how to compute the gradients'
                              ' of the subtracted term' + str(other) + '. Call'
                              ' train on it if it is an output layer')
-        new_obj.out = new_obj.out / other_var
+
+        if type(new_obj.out) == list:
+            outs = new_obj.out
+            for out in outs:
+                out = out / other_var
+        else:
+            new_obj.out = new_obj.out / other_var
         return new_obj
 
     def __abs__(self, other):

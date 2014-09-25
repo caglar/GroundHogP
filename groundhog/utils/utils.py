@@ -123,7 +123,10 @@ def sample_weights_orth(sizeX, sizeY, sparsity, scale, rng):
     sizeX = int(sizeX)
     sizeY = int(sizeY)
 
-    assert sizeX == sizeY, 'for orthogonal init, sizeX == sizeY'
+    if sizeX != sizeY:
+        print ('for orthogonal init, sizeX == sizeY')
+        print("using sample_weights_classic instead!!.")
+        return sample_weights_classic(sizeX, sizeY, sparsity, scale, rng)
 
     if sparsity < 0:
         sparsity = sizeY
