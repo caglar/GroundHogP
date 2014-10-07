@@ -399,8 +399,6 @@ class Layer(Container):
                'theano variable')
         return self.out
 
-
-
     def validate(self, **kwargs):
         """
         Recompute the cost error (without the gradients)
