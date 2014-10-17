@@ -221,7 +221,7 @@ def prototype_phrase_state():
     state = prototype_state()
 
     state['source'] = ["/data/lisatmp3/bahdanau/shuffled/phrase-table.en.h5"]
-    state['target'] = ["/data/lisatmp3/bahdanau/shuffled/phrase-table.fr.h5"]
+    state['target'] = ["/data/lisatmp3/bahdanau/shuffled/phrase-table.tr.h5"]
     state['indx_word'] = "/data/lisatmp3/chokyun/mt/ivocab_source.pkl"
     state['indx_word_target'] = "/data/lisatmp3/chokyun/mt/ivocab_target.pkl"
     state['word_indx'] = "/data/lisatmp3/chokyun/mt/vocab.en.pkl"
@@ -240,22 +240,23 @@ def prototype_encdec_state():
 
     state = prototype_state()
 
-    state['target'] = ["/data/lisatmp3/chokyun/mt/vocab.unlimited/bitexts.selected/binarized_text.shuffled.fr.h5"]
-    state['source'] = ["/data/lisatmp3/chokyun/mt/vocab.unlimited/bitexts.selected/binarized_text.shuffled.en.h5"]
-    state['indx_word'] = "/data/lisatmp3/chokyun/mt/vocab.unlimited/bitexts.selected/ivocab.en.pkl"
-    state['indx_word_target'] = "/data/lisatmp3/chokyun/mt/vocab.unlimited/bitexts.selected/ivocab.fr.pkl"
-    state['word_indx'] = "/data/lisatmp3/chokyun/mt/vocab.unlimited/bitexts.selected/vocab.en.pkl"
-    state['word_indx_trgt'] = "/data/lisatmp3/chokyun/mt/vocab.unlimited/bitexts.selected/vocab.fr.pkl"
+    state['target'] = ["/data/lisatmp2/gulcehrc/iwslt/iwslt.binarized_text.tr.shuff.h5"]
+    state['source'] = ["/data/lisatmp2/gulcehrc/iwslt/iwslt.binarized_text.en.shuff.h5"]
+    state['indx_word'] = "/data/lisatmp2/gulcehrc/iwslt/ivocab.en.pkl"
+    state['indx_word_target'] = "/data/lisatmp2/gulcehrc/iwslt/ivocab.tr.pkl"
+    state['word_indx'] = "/data/lisatmp2/gulcehrc/iwslt/vocab.en.pkl"
+    state['word_indx_trgt'] = "/data/lisatmp2/gulcehrc/iwslt/vocab.tr.pkl"
 
     state['null_sym_source'] = 30000
-    state['null_sym_target'] = 30000
+    state['null_sym_target'] = 140
+
     state['n_sym_source'] = state['null_sym_source'] + 1
     state['n_sym_target'] = state['null_sym_target'] + 1
 
-    state['seqlen'] = 30
-    state['bs']  = 80
+    state['seqlen'] = 200
+    state['bs']  = 100
 
-    state['dim'] = 1000
+    state['dim'] = 1200
     state['rank_n_approx'] = 620
 
     state['prefix'] = 'encdec_'
@@ -273,10 +274,10 @@ def prototype_search_state():
     state['last_forward'] = False
     state['forward'] = True
     state['backward'] = True
-    state['seqlen'] = 50
+    state['seqlen'] = 200
     state['sort_k_batches'] = 20
     state['prefix'] = 'search_'
-
+    state["character_level"] = True
     return state
 
 def prototype_phrase_lstm_state():

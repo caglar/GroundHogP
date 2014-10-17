@@ -11,8 +11,7 @@ from groundhog.trainer.SGD_adadelta import SGD as SGD_adadelta
 from groundhog.trainer.SGD import SGD as SGD
 from groundhog.trainer.SGD_momentum import SGD as SGD_momentum
 from groundhog.mainLoop import MainLoop
-from experiments.nmt import\
-        RNNEncoderDecoder, prototype_state, get_batch_iterator
+from experiments.nmt import RNNEncoderDecoder, prototype_state, get_batch_iterator
 import experiments.nmt
 
 logger = logging.getLogger(__name__)
@@ -46,14 +45,14 @@ class RandomSamplePrinter(object):
                     continue
 
                 print "Input: {}".format(" ".join(x_words))
-                print "Target: {}".format(" ".join(y_words))
+                print "Target: {}".format(" ".join(y_words).encode('utf-8'))
                 self.model.get_samples(self.state['seqlen'] + 1, self.state['n_samples'], x[:len(x_words)])
                 sample_idx += 1
 
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--state", help="State to use")
-    parser.add_argument("--proto",  default="prototype_state",
+    parser.add_argument("--proto",  default="prototype_search_state",
         help="Prototype state to use for state")
     parser.add_argument("--skip-init", action="store_true",
         help="Skip parameter initilization")
@@ -70,6 +69,7 @@ def main():
         else:
             with open(args.state) as src:
                 state.update(cPickle.load(src))
+
     for change in args.changes:
         state.update(eval("dict({})".format(change)))
 
@@ -86,11 +86,13 @@ def main():
     logger.debug("Compile trainer")
     algo = eval(state['algo'])(lm_model, state, train_data)
     logger.debug("Run training")
+
     main = MainLoop(train_data, None, None, lm_model, algo, state, None,
             reset=state['reset'],
             hooks=[RandomSamplePrinter(state, lm_model, train_data)]
                 if state['hookFreq'] >= 0
                 else None)
+
     if state['reload']:
         main.load()
     if state['loopIters'] > 0:

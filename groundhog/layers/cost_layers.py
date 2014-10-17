@@ -1079,10 +1079,12 @@ class SoftmaxLayer(CostLayer):
         """
 
         def _grab_probs(class_probs, target):
+            """
             shape0 = class_probs.shape[0]
             shape1 = class_probs.shape[1]
             target_ndim = target.ndim
             target_shape = target.shape
+
             if target.ndim > 1:
                 target = target.flatten()
             assert target.ndim == 1, 'make sure target is a vector of ints'
@@ -1091,6 +1093,19 @@ class SoftmaxLayer(CostLayer):
             pos = TT.arange(shape0)*shape1
             new_targ = target + pos
             return class_probs.flatten()[new_targ]
+            """
+
+            if class_probs.ndim > 2:
+                class_probs = class_probs.reshape((class_probs.shape[0] * class_probs.shape[1], class_probs.shape[2]))
+            else:
+                class_probs = class_probs
+
+            if target.ndim > 1:
+                tflat = target.flatten()
+            else:
+                tflat = target
+
+            return class_probs[TT.arange(tflat.shape[0]), tflat].flatten()
 
         assert target, 'Computing the cost requires a target'
         target_shape = target.shape
@@ -1223,7 +1238,7 @@ class HierarchicalSoftmaxLayer(SoftmaxLayer):
             self.bias_fn(self.n_class, self.bias_scale, self.rng),
             name='b_%s' % self.name)
 
-        U_em = theano.shared(((self.rng.rand(self.iBlocks, self.n_class, 
+        U_em = theano.shared(((self.rng.rand(self.iBlocks, self.n_class,
             self.n_in, self.n_words_class)-0.5)/(self.n_words_class*self.n_in)
             ).astype(theano.config.floatX), name='U_%s'%self.name)
         self.U_em = U_em
@@ -1289,7 +1304,7 @@ class HierarchicalSoftmaxLayer(SoftmaxLayer):
             class_val = utils.softmax(TT.dot(emb_val, W_em) + b_em)
 
             # compute the word probabilities
-            word_val = utils.softmax(self.sparse_block_dot_SS(U_em, 
+            word_val = utils.softmax(self.sparse_block_dot_SS(U_em,
                 emb_val[:, None, :], TT.zeros((bs, 1), dtype='int64'), c_em, outputIdx)[:, 0, :])
 
             class_val = class_val[TT.arange(bs), class_vec]

@@ -239,6 +239,7 @@ class LM_Model(Model):
     def get_samples(self, length = 30, temp=1, *inps):
         if not hasattr(self, 'word_indxs'):
            self.load_dict()
+
         self._get_samples(self, length, temp, *inps)
 
     def perturb(self, *args, **kwargs):

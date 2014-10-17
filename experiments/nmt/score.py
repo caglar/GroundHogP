@@ -58,9 +58,9 @@ class BatchBiTxtIterator(object):
     def __init__(self, state, src, indx_src, trg, indx_trg, batch_size, raise_unk):
         self.__dict__.update(locals())
         self.__dict__.pop('self')
-        self.src_iter = BatchTxtIterator(state, src, indx_src, batch_size, raise_unk, 
+        self.src_iter = BatchTxtIterator(state, src, indx_src, batch_size, raise_unk,
                                          unk_sym=state['unk_sym_source'], null_sym=state['null_sym_source'])
-        self.trg_iter = BatchTxtIterator(state, trg, indx_trg, batch_size, raise_unk, 
+        self.trg_iter = BatchTxtIterator(state, trg, indx_trg, batch_size, raise_unk,
                                          unk_sym=state['unk_sym_target'], null_sym=state['null_sym_target'])
 
     def start(self):
@@ -193,7 +193,7 @@ def main():
                 compute_probs = enc_dec.create_probs_computer()
                 src_line = raw_input('Source sequence: ')
                 trgt_line = raw_input('Target sequence: ')
-                src_seq = parse_input(state, indx_word_src, src_line, raise_unk=not args.allow_unk, 
+                src_seq = parse_input(state, indx_word_src, src_line, raise_unk=not args.allow_unk,
                                       unk_sym=state['unk_sym_source'], null_sym=state['null_sym_source'])
                 trgt_seq = parse_input(state, indx_word_trgt, trgt_line, raise_unk=not args.allow_unk,
                                        unk_sym=state['unk_sym_target'], null_sym=state['null_sym_target'])

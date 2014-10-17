@@ -17,6 +17,12 @@ from experiments.nmt.sample import sample as sample_func
 from collections import defaultdict
 import operator
 
+"""
+
+This script is for doing automatic segmentation with SMT models.
+
+"""
+
 cache = dict()
 
 def cached_sample_func(model, phrase, n_samples, sampler, beam_search):

@@ -180,6 +180,7 @@ def binarize():
         logger.info("Binarizing %s." % (input_filename))
         binarized_corpus = []
         ngram_count = 0
+
         for sentence_count, sentence in enumerate(input_file):
             if args.char:
                 words = list(sentence.strip().decode('utf-8'))
@@ -200,6 +201,7 @@ def binarize():
                                  padded_sentence.itemsize)
                     )
             ngram_count += len(words) + 1
+
         # endfor sentence in input_file
         # Output
         if args.each:
@@ -231,6 +233,7 @@ def binarize():
     # endfor input_file in args.input
     if args.pickle:
         safe_pickle(binarized_corpora, args.binarized_text)
+
     if args.ngram and args.split:
         if args.split >= 1:
             rows = int(args.split)

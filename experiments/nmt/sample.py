@@ -8,6 +8,7 @@ import time
 import sys
 
 import numpy
+import codecs
 
 import experiments.nmt
 from experiments.nmt import\
@@ -72,6 +73,7 @@ class BeamSearch(object):
             # Adjust log probs according to search restrictions
             if ignore_unk:
                 log_probs[:,self.unk_id] = -numpy.inf
+
             # TODO: report me in the paper!!!
             if k < minlen:
                 log_probs[:,self.eos_id] = -numpy.inf
@@ -94,20 +96,26 @@ class BeamSearch(object):
             new_costs = numpy.zeros(n_samples)
             new_states = [numpy.zeros((n_samples, dim), dtype="float32") for level
                     in range(num_levels)]
+
             inputs = numpy.zeros(n_samples, dtype="int64")
             for i, (orig_idx, next_word, next_cost) in enumerate(
                     zip(trans_indices, word_indices, costs)):
+
                 new_trans[i] = trans[orig_idx] + [next_word]
                 new_costs[i] = next_cost
+
                 for level in range(num_levels):
                     new_states[level][i] = states[level][orig_idx]
+
                 inputs[i] = next_word
+
             new_states = self.comp_next_states(c, k, inputs, *new_states)
 
             # Filter the sequences that end with end-of-sequence character
             trans = []
             costs = []
             indices = []
+
             for i in range(n_samples):
                 if new_trans[i][-1] != self.enc_dec.state['null_sym_target']:
                     trans.append(new_trans[i])
@@ -117,6 +125,7 @@ class BeamSearch(object):
                     n_samples -= 1
                     fin_trans.append(new_trans[i])
                     fin_costs.append(new_costs[i])
+
             states = map(lambda x : x[indices], new_states)
 
         # Dirty tricks to obtain any translation
@@ -124,10 +133,11 @@ class BeamSearch(object):
             if ignore_unk:
                 logger.warning("Did not manage without UNK")
                 return self.search(seq, n_samples, False, minlen)
-            elif n_samples < 500:
+            elif n_samples < 70:
                 logger.warning("Still no translations: try beam size {}".format(n_samples * 2))
                 return self.search(seq, n_samples * 2, False, minlen)
             else:
+                return fin_trans, fin_costs
                 logger.error("Translation failed")
 
         fin_trans = numpy.array(fin_trans)[numpy.argsort(fin_costs)]
@@ -143,35 +153,49 @@ def indices_to_words(i2w, seq):
     return sen
 
 def sample(lm_model, seq, n_samples,
-        sampler=None, beam_search=None,
-        ignore_unk=False, normalize=False,
-        alpha=1, verbose=False):
+           sampler=None, beam_search=None,
+           ignore_unk=False, normalize=False,
+           alpha=1, verbose=False):
+
     if beam_search:
         sentences = []
         trans, costs = beam_search.search(seq, n_samples,
-                ignore_unk=ignore_unk, minlen=len(seq) / 2)
+                                          ignore_unk=ignore_unk,
+                                          minlen=len(seq) / 2)
+        #if len(trans) < 1:
+        #    return
+
         if normalize:
             counts = [len(s) for s in trans]
             costs = [co / cn for co, cn in zip(costs, counts)]
+
         for i in range(len(trans)):
             sen = indices_to_words(lm_model.word_indxs, trans[i])
             sentences.append(" ".join(sen))
+
         for i in range(len(costs)):
             if verbose:
-                print "{}: {}".format(costs[i], sentences[i])
+                print "{}: {}".format(costs[i], sentences[i].encode('utf-8'))
+
         return sentences, costs, trans
+
     elif sampler:
         sentences = []
         all_probs = []
         costs = []
 
-        values, cond_probs = sampler(n_samples, 3 * (len(seq) - 1), alpha, seq)
+        values, cond_probs = sampler(n_samples,
+                                     3 * (len(seq) - 1),
+                                     alpha, seq)
+
         for sidx in xrange(n_samples):
             sen = []
             for k in xrange(values.shape[0]):
                 if lm_model.word_indxs[values[k, sidx]] == '<eol>':
                     break
+
                 sen.append(lm_model.word_indxs[values[k, sidx]])
+
             sentences.append(" ".join(sen))
             probs = cond_probs[:, sidx]
             probs = numpy.array(cond_probs[:len(sen) + 1, sidx])
@@ -180,6 +204,7 @@ def sample(lm_model, seq, n_samples,
         if normalize:
             counts = [len(s.strip().split(" ")) for s in sentences]
             costs = [co / cn for co, cn in zip(costs, counts)]
+
         sprobs = numpy.argsort(costs)
         if verbose:
             for pidx in sprobs:
@@ -193,30 +218,44 @@ def sample(lm_model, seq, n_samples,
 def parse_args():
     parser = argparse.ArgumentParser(
             "Sample (of find with beam-serch) translations from a translation model")
+
     parser.add_argument("--state",
             required=True, help="State to use")
+
     parser.add_argument("--beam-search",
             action="store_true", help="Beam size, turns on beam-search")
+
     parser.add_argument("--beam-size",
             type=int, help="Beam size")
+
     parser.add_argument("--ignore-unk",
             default=False, action="store_true",
             help="Ignore unknown words")
+
     parser.add_argument("--source",
             help="File of source sentences")
+
     parser.add_argument("--trans",
             help="File to save translations in")
+
+    parser.add_argument("--indx_tgt",
+                        help="Target sentence indices.")
+
     parser.add_argument("--normalize",
             action="store_true", default=False,
             help="Normalize log-prob with the word count")
+
     parser.add_argument("--verbose",
             action="store_true", default=False,
             help="Be verbose")
+
     parser.add_argument("model_path",
             help="Path to the model")
+
     parser.add_argument("changes",
             nargs="?", default="",
             help="Changes to state")
+
     return parser.parse_args()
 
 def main():
@@ -238,6 +277,7 @@ def main():
 
     sampler = None
     beam_search = None
+
     if args.beam_search:
         beam_search = BeamSearch(enc_dec)
         beam_search.compile()
@@ -246,35 +286,53 @@ def main():
 
     idict_src = cPickle.load(open(state['indx_word'],'r'))
 
+    if args.indx_tgt:
+        tgt_indx_file = args.indx_tgt
+        tgt_indxs = cPickle.load(open(tgt_indx_file, "r"))
+        lm_model.word_indxs = tgt_indxs
+
     if args.source and args.trans:
         # Actually only beam search is currently supported here
         assert beam_search
         assert args.beam_size
 
-        fsrc = open(args.source, 'r')
-        ftrans = open(args.trans, 'w')
+        import codecs
+
+        fsrc = codecs.open(args.source, 'r', 'utf-8')
+        ftrans = codecs.open(args.trans, 'w', 'utf-8')
 
         start_time = time.time()
 
         n_samples = args.beam_size
+
         total_cost = 0.0
         logging.debug("Beam size: {}".format(n_samples))
+
         for i, line in enumerate(fsrc):
             seqin = line.strip()
             seq, parsed_in = parse_input(state, indx_word, seqin, idx2word=idict_src)
+
             if args.verbose:
                 print "Parsed Input:", parsed_in
+
             trans, costs, _ = sample(lm_model, seq, n_samples, sampler=sampler,
-                    beam_search=beam_search, ignore_unk=args.ignore_unk, normalize=args.normalize)
-            best = numpy.argmin(costs)
-            print >>ftrans, trans[best]
-            if args.verbose:
-                print "Translation:", trans[best]
-            total_cost += costs[best]
-            if (i + 1)  % 100 == 0:
-                ftrans.flush()
-                logger.debug("Current speed is {} per sentence".
-                        format((time.time() - start_time) / (i + 1)))
+                                     beam_search=beam_search, ignore_unk=args.ignore_unk,
+                                     normalize=args.normalize)
+
+            if len(trans) > 1:
+                best = numpy.argmin(costs)
+
+                print >>ftrans, trans[best] #.decode('utf-8')
+
+                if args.verbose:
+                    print "Translation:", trans[best]
+
+                total_cost += costs[best]
+                if (i + 1)  % 100 == 0:
+                    ftrans.flush()
+                    logger.debug("Current speed is {} per sentence".
+                            format((time.time() - start_time) / (i + 1)))
+
         print "Total cost of the translations: {}".format(total_cost)
 
         fsrc.close()

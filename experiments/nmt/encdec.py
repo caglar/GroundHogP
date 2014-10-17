@@ -55,6 +55,7 @@ def create_padded_batch(state, x, y, return_dict=False):
 
     mx = state['seqlen']
     my = state['seqlen']
+
     if state['trim_batches']:
         # Similar length for all source sequences
         mx = numpy.minimum(state['seqlen'], max([len(xx) for xx in x[0]]))+1
@@ -187,7 +188,6 @@ def get_batch_iterator(state):
 
 class RecurrentLayerWithSearch(Layer):
     """A copy of RecurrentLayer from groundhog"""
-
     def __init__(self, rng,
                  n_hids,
                  c_dim=None,
@@ -287,7 +287,7 @@ class RecurrentLayerWithSearch(Layer):
                 name="D_%s"%self.name)
         self.params.append(self.D_pe)
         self.params_grad_scale = [self.grad_scale for x in self.params]
-       
+
     def set_decoding_layers(self, c_inputer, c_reseter, c_updater):
         self.c_inputer = c_inputer
         self.c_reseter = c_reseter
@@ -308,7 +308,7 @@ class RecurrentLayerWithSearch(Layer):
                    use_noise=True,
                    no_noise_bias=False,
                    step_num=None,
-                   return_alignment=False):
+                   return_alignment=True):
         """
         Constructs the computational graph of this layer.
 
@@ -431,7 +431,7 @@ class RecurrentLayerWithSearch(Layer):
               use_noise=True,
               truncate_gradient=-1,
               no_noise_bias=False,
-              return_alignment=False):
+              return_alignment=True):
 
         updater_below = gater_below
 
@@ -461,10 +461,10 @@ class RecurrentLayerWithSearch(Layer):
 
         p_from_c =  utils.dot(c, self.A_cp).reshape(
                 (c.shape[0], c.shape[1], self.n_hids))
-        
+
         if mask:
             sequences = [state_below, mask, updater_below, reseter_below]
-            non_sequences = [c, c_mask, p_from_c] 
+            non_sequences = [c, c_mask, p_from_c]
             #              seqs    | out |  non_seqs
             fn = lambda x, m, g, r,   h,   c1, cm, pc : self.step_fprop(x, h, mask=m,
                     gater_below=g, reseter_below=r,
@@ -1100,7 +1100,7 @@ class Decoder(EncoderDecoderBase):
             if self.state['search']:
                 if self.compute_alignment:
                     #This implicitly wraps each element of result.out with a Layer to keep track of the parameters.
-                    #It is equivalent to h=result[0], ctx=result[1] etc. 
+                    #It is equivalent to h=result[0], ctx=result[1] etc.
                     h, ctx, alignment = result
                     if mode == Decoder.EVALUATION:
                         alignment = alignment.out
@@ -1250,6 +1250,7 @@ class Decoder(EncoderDecoderBase):
                 sequences=[TT.arange(n_steps, dtype="int64")],
                 n_steps=n_steps,
                 name="{}_sampler_scan".format(self.prefix))
+
         return (outputs[0], outputs[1]), updates
 
     def build_next_probs_predictor(self, c, step_num, y, init_states):
@@ -1394,8 +1395,14 @@ class RNNEncoderDecoder(object):
     def create_lm_model(self):
         if hasattr(self, 'lm_model'):
             return self.lm_model
+
+        character_level = False
+        if "character_level" in self.state.keys():
+            character_level = True
+
         self.lm_model = LM_Model(
             cost_layer=self.predictions,
+            character_level=character_level,
             sample_fn=self.create_sampler(),
             weight_noise_amount=self.state['weight_noise_amount'],
             indx_word=self.state['indx_word_target'],
@@ -1428,7 +1435,8 @@ class RNNEncoderDecoder(object):
             return self.sample_fn
         logger.debug("Compile sampler")
         self.sample_fn = theano.function(
-                inputs=[self.n_samples, self.n_steps, self.T, self.sampling_x],
+                inputs=[self.n_samples, self.n_steps, self.T,
+                        self.sampling_x],
                 outputs=[self.sample, self.sample_log_prob],
                 updates=self.sampling_updates,
                 name="sample_fn")
@@ -1460,7 +1468,8 @@ class RNNEncoderDecoder(object):
                     inputs=[self.c, self.step_num, self.gen_y] + self.current_states,
                     outputs=[self.decoder.build_next_probs_predictor(
                         self.c, self.step_num, self.gen_y, self.current_states)],
-                    name="next_probs_fn")
+                    name="next_probs_fn",
+                    on_unused_input='ignore')
         return self.next_probs_fn
 
     def create_next_states_computer(self):
@@ -1469,17 +1478,20 @@ class RNNEncoderDecoder(object):
                     inputs=[self.c, self.step_num, self.gen_y] + self.current_states,
                     outputs=self.decoder.build_next_states_computer(
                         self.c, self.step_num, self.gen_y, self.current_states),
-                    name="next_states_fn")
+                    name="next_states_fn",
+                    on_unused_input='ignore')
         return self.next_states_fn
 
 
-    def create_probs_computer(self, return_alignment=False):
+    def create_probs_computer(self, return_alignment=True):
+
         if not hasattr(self, 'probs_fn'):
             logger.debug("Compile probs computer")
             self.probs_fn = theano.function(
                     inputs=self.inputs,
                     outputs=[self.predictions.word_probs, self.alignment],
                     name="probs_fn")
+
         def probs_computer(x, y):
             x_mask = numpy.ones(x.shape[0], dtype="float32")
             y_mask = numpy.ones(y.shape[0], dtype="float32")
@@ -1489,6 +1501,7 @@ class RNNEncoderDecoder(object):
                 return probs, alignment
             else:
                 return probs
+
         return probs_computer
 
 def parse_input(state, word2idx, line, raise_unk=False, idx2word=None, unk_sym=-1, null_sym=-1):

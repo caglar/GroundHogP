@@ -50,15 +50,19 @@ to train an RNNencdec-30 from [1] run
 ```
 train.py --proto=prototype_encdec_state
 ```
+
 To change options from the state use the positional argument *changes*. For
 instance, to train RNNencdec-50 from [1] you can run
+
 ```
 train.py --proto=prototype_encdec_state "prefix='encdec-50_',seqlen=50,sort_k_batches=20"
 ```
+
 For explanations of the state options, see comments in the state.py file. If a
 lot of changes to the prototype state are required (for instance you want to
 train on another dataset), you might want put them in a file, e.g.
 german-data.py, if you want to train the same model to translate to German: 
+
 ```
 dict(
     source=["parallel-corpus/en-de/parallel.en.shuf.h5"],
@@ -66,7 +70,9 @@ dict(
     word_indx_trgt="parallel-corpus/en-de/vocab.de.pkl"
 )
 ```
+
 and run
+
 ```
 train.py --proto=a_prototype_state_of_choice --state german-data.py 
 ```
@@ -76,6 +82,7 @@ The typical call is
 ```
 sample.py --beam-search --state your_state.pkl your_model.npz 
 ```
+
 where your_state.pkl and your_model.npz are a state and a model respectively
 produced by the train.py script.  A batch mode is also supported, see the
 sample.py source code.
