@@ -251,14 +251,14 @@ if __name__=='__main__':
     state['nin'] = 10000
     state['reload'] = False
     state['noisy_ll'] = 0
-    state['nhids'] = 400
+    state['nhids'] = 600
     state['mem_man_act'] = "TT.nnet.sigmoid"
-    state['top_k'] = 10
+    state['top_k'] = 20
 
-    state['memory_bank_sizes'] = [2000, 400]
+    state['memory_bank_sizes'] = [5000, 600]
     state['reseting'] = True
     state['lr'] = 1.
-    state['minlr'] = 1e-5
+    state['minlr'] = 1e-6
     state['dictionary']= "/data/lisa/data/PennTreebankCorpus/dictionaries.npz"
 
     state['cutoff'] = 5.
@@ -267,7 +267,7 @@ if __name__=='__main__':
     state['weight_noise'] = False
     state['weight_noise_amount'] = 0.1
     state['reseting'] = False
-    state['bs']  = 40
+    state['bs']  = 150
     state['reset'] = -1
     state['seqlen'] = 150
 
@@ -278,9 +278,9 @@ if __name__=='__main__':
 
     state['seed'] = 123
 
-    state['trainFreq'] = 50
+    state['trainFreq'] = 10
     state['hookFreq'] = 0
-    state['validFreq'] = 400
+    state['validFreq'] = 60
     state['saveFreq'] = 60
 
     state['prefix'] = 'penn_rnn2'
