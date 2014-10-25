@@ -4,7 +4,9 @@ This is a test of the deep RNN
 '''
 from groundhog.datasets.NParity_dataset import NParityIterator
 
-from groundhog.trainer.SGD import SGD
+from groundhog.trainer.SGD_hessapprox3 import SGD
+#from groundhog.trainer.vsgd import SGD
+
 from groundhog.mainLoop import MainLoop
 
 from groundhog.layers import MultiLayer, \
@@ -35,13 +37,18 @@ def get_data(state):
 
     new_format = lambda x, y: {'x': x, 'y': y}
     out_format = lambda x, y: new_format(x, y)
-    path = "/data/lisa/exp/caglargul/codes/python/nbit_parity_data/par_fil_npar_2_nsamp_4_det.npy"
+    #path = "/data/lisa/exp/caglargul/codes/python/nbit_parity_data/par_fil_npar_2_nsamp_4_det.npy"
+    #path = "/data/lisa/exp/caglargul/codes/python/nbit_parity_data/par_fil_npar_10_nsamp_100000.npy"
+    path = "/data/lisa/exp/caglargul/codes/python/nbit_parity_data/par_fil_npar_100_nsamp_100000.npy"
+    #path = "/data/lisa/exp/caglargul/codes/python/nbit_parity_data/par_fil_npar_20_nsamp_100000_det2.npy"
+    #path = "/data/lisa/exp/caglargul/codes/python/nbit_parity_data/par_fil_npar_15_nsamp_100000.npy"
+    #path = "/data/lisa/exp/caglargul/codes/python/nbit_parity_data/par_fil_npar_17_nsamp_100000_det.npy"
 
     if state["bs"] == "full":
         train_data = NParityIterator(batch_size = state['bs'],
                                      start=0,
                                      stop=90000,
-                                     max_iters=200,
+                                     max_iters=20000,
                                      path=path)
 
         valid_data = NParityIterator(batch_size = state['bs'],
@@ -58,14 +65,15 @@ def get_data(state):
     else:
         train_data = NParityIterator(batch_size = int(state['bs']),
                                      start=0,
-                                     stop=4,
-                                     max_iters=200,
+                                     stop=90000,
+                                     max_iters=20000,
                                      path=path)
         valid_data = NParityIterator(batch_size = int(state['bs']),
                                      start=0,
-                                     stop=4,
+                                     stop=90000,
                                      max_iters=1,
                                      path=path)
+        #valid_data = train_data
         test_data = None
 
         """
@@ -117,7 +125,8 @@ def powerup(x, p=None, c=None):
 def jobman(state, channel):
     # load dataset
     state['nouts'] = 2
-    state['nins'] = 2
+    state['nins'] = 100
+
     rng = numpy.random.RandomState(state['seed'])
     train_data, valid_data, test_data = get_data(state)
 
@@ -222,25 +231,26 @@ if __name__=='__main__':
 
     state['nclasses'] = 2
     state['reload'] = False
-    state['dim'] = '[5]' #5000
-    state['activ'] = 'lambda x: TT.tanh(x)'
+    state['dim'] = '[600]' #5000
+    state['activ'] = 'lambda x: TT.maximum(x, 0)'
     state['bias'] = 0.
     state['exclude_powers'] = False
     state['maxout_part'] = 1.
 
-    state['weight_init_fn'] = 'sample_weights_classic'
+    state['nlayers'] = 12
+    state['weight_init_fn'] = 'sample_weights_orth'
     state['weight_scale'] = 0.01
 
     state['lr'] = .15
     state['minlr'] = 1e-8
-    state['moment'] = .42
-    state['switch'] = 500 * 5
+    state['momentum'] = 1.
+
+    state['switch'] = 100
 
     state['cutoff'] = 0.
     state['cutoff_rescale_length'] = 0.
-    state["cpu_subspace"] = True
 
-    state['lr_adapt'] = True
+    state['lr_adapt'] = False
     state['lr_adapt_exp'] = False
     state['lr_beta'] = 500. * 100. # 0.99
     state['lr_start'] = 0
@@ -252,7 +262,7 @@ if __name__=='__main__':
 
     state['max_norm'] = 0.
 
-    state['bs']  = 1
+    state['bs']  = 5000
     state['reset'] = -1
 
     state['loopIters'] = 500 * 500
@@ -260,13 +270,12 @@ if __name__=='__main__':
     state['minerr'] = -1
 
     state['seed'] = 123
+    state['correction'] = 1.0
+    state['trainFreq'] = 20
+    state['validFreq'] = 100
+    state['hookFreq'] =  100
+    state['saveFreq'] = 60
 
-    state['trainFreq'] = 1
-    state['validFreq'] = 10
-    state['hookFreq'] =  20
-    state['saveFreq'] = 100
-
-    state['profile'] = 0
     state['out_sparse'] = -1
     state['out_bias_scale'] = -0.5
     state['prefix'] = 'model_wmlp_'

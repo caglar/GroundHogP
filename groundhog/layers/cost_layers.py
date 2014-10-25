@@ -1084,6 +1084,7 @@ class SoftmaxLayer(CostLayer):
         """
 
         def _grab_probs(class_probs, target):
+            """
             shape0 = class_probs.shape[0]
             shape1 = class_probs.shape[1]
             target_ndim = target.ndim
@@ -1096,6 +1097,17 @@ class SoftmaxLayer(CostLayer):
             pos = TT.arange(shape0)*shape1
             new_targ = target + pos
             return class_probs.flatten()[new_targ]
+            """
+
+            if class_probs.ndim > 2:
+                class_probs = class_probs.reshape((class_probs.shape[0] * class_probs.shape[1], class_probs.shape[2]))
+            else:
+                class_probs = class_probs
+            if target.ndim > 1:
+                tflat = target.flatten()
+            else:
+                tflat = target
+            return class_probs[TT.arange(tflat.shape[0]), tflat].flatten()
 
         assert target, 'Computing the cost requires a target'
         target_shape = target.shape
@@ -1261,7 +1273,7 @@ class MultiSoftmaxClassificationLayer(CostLayer):
             shape1 = class_probs.shape[1]
             target_ndim = target.ndim
             target_shape = target.shape
-
+            """
             if target.ndim > 1:
                 target = target.flatten()
 
@@ -1272,6 +1284,17 @@ class MultiSoftmaxClassificationLayer(CostLayer):
             new_targ = target + pos
 
             return class_probs.flatten()[new_targ]
+            """
+
+            if class_probs.ndim > 2:
+                class_probs = class_probs.reshape((class_probs.shape[0] * class_probs.shape[1], class_probs.shape[2]))
+            else:
+                class_probs = class_probs
+            if target.ndim > 1:
+                tflat = target.flatten()
+            else:
+                tflat = target
+            return class_probs[TT.arange(tflat.shape[0]), tflat].flatten()
 
         assert target, 'Computing the cost requires a target'
 

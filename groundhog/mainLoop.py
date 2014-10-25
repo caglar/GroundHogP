@@ -131,11 +131,14 @@ class MainLoop(object):
 
         n_elems = state['loopIters'] // state['trainFreq'] + 1
         self.timings = {'step' : 0, 'next_offset' : -1}
+
         for name in self.algo.return_names:
             self.timings[name] = numpy.zeros((n_elems,), dtype='float32')
+
         if self.l2_params:
             for param in model.params:
                 self.timings["l2_" + param.name] = numpy.zeros(n_elems, dtype="float32")
+
         n_elems = state['loopIters'] // state['validFreq'] + 1
         for pname in model.valid_costs:
             self.state['valid'+pname] = 1e20
@@ -347,6 +350,7 @@ class MainLoop(object):
                 self.step += 1
                 self.timings['step'] = self.step
                 self.timings['next_offset'] = self.train_data.next_offset
+
             except KeyboardInterrupt:
                 break
 

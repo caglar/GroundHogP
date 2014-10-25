@@ -4,7 +4,7 @@ This is a test of the deep RNN
 '''
 from groundhog.datasets.NParity_dataset import NParityIterator
 
-from groundhog.trainer.SGD_Robustadadelta import SGD
+from groundhog.trainer.vsgd import SGD
 from groundhog.mainLoop import MainLoop
 
 from groundhog.layers import MultiLayer, \
@@ -35,7 +35,8 @@ def get_data(state):
 
     new_format = lambda x, y: {'x': x, 'y': y}
     out_format = lambda x, y: new_format(x, y)
-    path = "/data/lisa/exp/caglargul/codes/python/nbit_parity_data/par_fil_npar_2_nsamp_4_det.npy"
+    #path = "/data/lisa/exp/caglargul/codes/python/nbit_parity_data/par_fil_npar_2_nsamp_4_det.npy"
+    path = "/data/lisa/exp/caglargul/codes/python/nbit_parity_data/par_fil_npar_10_nsamp_100000.npy"
 
     if state["bs"] == "full":
         train_data = NParityIterator(batch_size = state['bs'],
@@ -61,17 +62,18 @@ def get_data(state):
     else:
         train_data = NParityIterator(batch_size = int(state['bs']),
                                      start=0,
-                                     stop=4,
+                                     stop=90000,
                                      max_iters=200,
                                      use_hints=True,
                                      path=path)
         valid_data = NParityIterator(batch_size = int(state['bs']),
-                                     start=0,
-                                     stop=4,
+                                     start=90000,
+                                     stop=100000,
                                      max_iters=1,
                                      use_hints=True,
                                      path=path)
         test_data = None
+
         """
         test_data = NParityIterator(batch_size = int(state['bs']),
                                     start=95000,
@@ -122,7 +124,7 @@ def powerup(x, p=None, c=None):
 def jobman(state, channel):
     # load dataset
     state['nouts'] = 2
-    state['nins'] = 2
+    state['nins'] = 10
     rng = numpy.random.RandomState(state['seed'])
     train_data, valid_data, test_data = get_data(state)
 
@@ -247,13 +249,13 @@ if __name__=='__main__':
 
     state['nclasses'] = 2
     state['reload'] = False
-    state['dim'] = '[100]' #5000
+    state['dim'] = '[500]' #5000
 
     state['activ'] = 'lambda x: TT.tanh(x)'
     state['bias'] = 0.
     state['exclude_powers'] = False
     state['maxout_part'] = 1.
-    state['nlayers'] = 5
+    state['nlayers'] = 4
 
     state['weight_init_fn'] = 'sample_weights_orth'
     state['weight_scale'] = 0.01
@@ -262,7 +264,7 @@ if __name__=='__main__':
     state['minlr'] = 1e-8
     state['moment'] = .55
 
-    state['switch'] = 500 * 5
+    state['switch'] = 50
 
     state['cutoff'] = 0.
     state['cutoff_rescale_length'] = 0.
@@ -280,7 +282,7 @@ if __name__=='__main__':
 
     state['max_norm'] = 0.
 
-    state['bs']  = 100
+    state['bs']  = 1
     state['reset'] = -1
 
     state['loopIters'] = 50000 * 100
@@ -289,9 +291,9 @@ if __name__=='__main__':
 
     state['seed'] = 123
 
-    state['trainFreq'] = 2#100
-    state['validFreq'] = 4#1000
-    state['hookFreq'] =  2#1000
+    state['trainFreq'] = 2 #100
+    state['validFreq'] = 4 #1000
+    state['hookFreq'] =  2 #1000
     state['saveFreq'] = 500
 
     state['profile'] = 0
