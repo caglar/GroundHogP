@@ -3,8 +3,9 @@ This is a test of the deep RNN
 
 '''
 from groundhog.datasets.NParity_dataset import NParityIterator
+from groundhog.datasets.Pentomino_dataset import PentominoIterator
 
-from groundhog.trainer.SGD_adadelta import SGD
+from groundhog.trainer.SGD_hessapprox3 import SGD
 #from groundhog.trainer.vsgd import SGD
 
 from groundhog.mainLoop import MainLoop
@@ -37,18 +38,24 @@ def get_data(state):
 
     new_format = lambda x, y: {'x': x, 'y': y}
     out_format = lambda x, y: new_format(x, y)
-    #path = "/data/lisa/exp/caglargul/codes/python/nbit_parity_data/par_fil_npar_2_nsamp_4_det.npy"
-    #path = "/data/lisa/exp/caglargul/codes/python/nbit_parity_data/par_fil_npar_10_nsamp_100000.npy"
-    #path = "/data/lisa/exp/caglargul/codes/python/nbit_parity_data/par_fil_npar_100_nsamp_100000.npy"
-    path = "/data/lisa/exp/caglargul/codes/python/nbit_parity_data/par_fil_npar_20_nsamp_100000_det2.npy"
-    #path = "/data/lisa/exp/caglargul/codes/python/nbit_parity_data/par_fil_npar_15_nsamp_100000.npy"
-    #path = "/data/lisa/exp/caglargul/codes/python/nbit_parity_data/par_fil_npar_17_nsamp_100000_det.npy"
+
+    # path = "/data/lisa/exp/caglargul/codes/python/nbit_parity_data/par_fil_npar_2_nsamp_4_det.npy"
+    # path = "/data/lisa/exp/caglargul/codes/python/nbit_parity_data/par_fil_npar_10_nsamp_100000.npy"
+    # path = "/data/lisa/exp/caglargul/codes/python/nbit_parity_data/par_fil_npar_100_nsamp_100000.npy"
+    # path = "/data/lisa/exp/caglargul/codes/python/nbit_parity_data/par_fil_npar_20_nsamp_100000_det2.npy"
+    # path = "/data/lisa/exp/caglargul/codes/python/nbit_parity_data/par_fil_npar_15_nsamp_100000.npy"
+    # path = "/data/lisa/exp/caglargul/codes/python/nbit_parity_data/par_fil_npar_17_nsamp_100000_det.npy"
+
+    names = [ "pento64x64_80k_64patches_seed_735128712_64patches.npy" ]
+
+    # "pento64x64_40k_64patches_seed_975168712_64patches.npy"]
 
     if state["bs"] == "full":
         train_data = NParityIterator(batch_size = state['bs'],
                                      start=0,
                                      stop=90000,
                                      max_iters=20000,
+                                     names=names,
                                      path=path)
 
         valid_data = NParityIterator(batch_size = state['bs'],
@@ -63,16 +70,32 @@ def get_data(state):
                                     max_iters=1,
                                     path=path)
     else:
-        train_data = NParityIterator(batch_size = int(state['bs']),
-                                     start=0,
-                                     stop=90000,
-                                     max_iters=20000,
-                                     path=path)
-        valid_data = NParityIterator(batch_size = int(state['bs']),
-                                     start=90000,
-                                     stop=100000,
-                                     max_iters=1,
-                                     path=path)
+        print "Loading the training set..."
+        train_data = PentominoIterator(batch_size = int(state['bs']),
+                                       start=0,
+                                       names=names,
+                                       stop=70000,
+                                       output_format=out_format)
+
+        print "Loading the validation set..."
+        """
+        valid_data = PentominoIterator(batch_size = int(state['bs']),
+                                       start=0,
+                                       stop=70000,
+                                       names=names,
+                                       use_infinite_loop=False,
+                                       output_format=out_format,
+                                       mode="valid")
+        """
+        print "Loading the test set..."
+        valid_data = PentominoIterator(batch_size = int(state['bs']),
+                                       start=70000,
+                                       stop=80000,
+                                       names=names,
+                                       use_infinite_loop=False,
+                                       output_format=out_format,
+                                       mode="valid")
+
         #valid_data = train_data
         test_data = None
 
@@ -125,7 +148,7 @@ def powerup(x, p=None, c=None):
 def jobman(state, channel):
     # load dataset
     state['nouts'] = 2
-    state['nins'] = 20
+    state['nins'] = 64*64
 
     rng = numpy.random.RandomState(state['seed'])
     train_data, valid_data, test_data = get_data(state)
@@ -145,19 +168,42 @@ def jobman(state, channel):
     if state['activ'] == 'powerup' or state['activ'] == 'maxout':
         n_pieces = state['maxout_part']
 
+    #dropper = DropOp(dropout=state['dropout'], rng=rng)
+
+    if "nlayers" in state:
+        nlayers = state['nlayers']
+    else:
+        nlayers = 1
+
+    layers = []
     mlp = MultiLayer(rng,
                      n_in=state['nins'],
+                     dropout=state['dropout'],
                      n_hids=eval(state['dim']),
                      activation=eval(state['activ']),
                      init_fn=state['weight_init_fn'],
                      scale=state['weight_scale'],
                      learn_bias=True,
-                     name='mlp')
+                     name='mlp_layer_%d' % 0)
+
+    layers.append(mlp)
+    for i in xrange(1, nlayers):
+        mlp = MultiLayer(rng,
+                         n_in=eval(state['dim']),
+                         n_hids=eval(state['dim']),
+                         activation=eval(state['activ']),
+                         #dropout=state['dropout'],
+                         init_fn=state['weight_init_fn'],
+                         scale=state['weight_scale'],
+                         learn_bias=True,
+                         name='mlp_layer_%d' % i)
+
+        layers.append(mlp)
 
     if state['activ'] == 'powerup' or state['activ'] == 'maxout':
-        pendim = eval(state['dim'])[-1] / state['maxout_part']
+        pendim = eval(state['dim']) / state['maxout_part']
     else:
-        pendim = eval(state['dim'])[-1]
+        pendim = eval(state['dim'])
 
     print("pendim ", pendim)
 
@@ -173,7 +219,6 @@ def jobman(state, channel):
 
     def update_lr(obj, cost):
         stp = obj.step
-
         if isinstance(obj.state['lr_start'], int) and stp > obj.state['lr_start']:
             time = float(stp - obj.state['lr_start'])
             if obj.state['lr_adapt_exp']:
@@ -182,18 +227,28 @@ def jobman(state, channel):
                 else:
                     new_lr = obj.lr
             else:
-                new_lr = obj.state['clr']/(1 + time / obj.state['lr_beta'])
+                new_lr = obj.state['clr'] / (1 + time / obj.state['lr_beta'])
             obj.lr = new_lr
 
     if state['lr_adapt']:
         output_layer.add_schedule(update_lr)
 
-    output_sto = output_layer(mlp(x_train))
+    mlayers = []
+    mlp_layer_out = layers[0](x_train)
+
+    for i in xrange(1, nlayers):
+        mlp_layer_out = layers[i](mlp_layer_out)
+
+    output_sto = output_layer(mlp_layer_out)
     train_model = output_sto.train(target=y) / TT.cast(y.shape[0], 'float32')
 
-    valid_model = output_layer(mlp(x_valid,
-                                   use_noise=False),
-                                   use_noise=False).validate(target=y)
+    mlp_layer_out = layers[0](x_valid)
+
+    for i in xrange(1, nlayers):
+        mlp_layer_out = layers[i](mlp_layer_out, use_noise=False)
+
+    valid_model = output_layer(mlp_layer_out,
+                               use_noise=False).validate(target=y)
 
     valid_fn = theano.function([x_valid, y],
                                [valid_model.cost,
@@ -223,6 +278,7 @@ def jobman(state, channel):
 
     if state['reload']:
         main.load()
+
     main.main()
 
 
@@ -231,7 +287,7 @@ if __name__=='__main__':
 
     state['nclasses'] = 2
     state['reload'] = False
-    state['dim'] = '[800]' #5000
+    state['dim'] = '800' #5000
     state['activ'] = 'lambda x: TT.maximum(x, 0)'
     state['bias'] = 0.
     state['exclude_powers'] = False
@@ -243,7 +299,7 @@ if __name__=='__main__':
 
     state['lr'] = .15
     state['minlr'] = 1e-8
-    state['momentum'] = 1.
+    #state['momentum'] = 1.
 
     state['switch'] = 100
 
@@ -265,20 +321,21 @@ if __name__=='__main__':
     state['bs']  = 1000
     state['reset'] = -1
 
-    state['loopIters'] = 500 * 500
-    state['timeStop'] = 24*60*7
+    state['loopIters'] = 10000*500
+    state['timeStop'] = 24*60*100
     state['minerr'] = -1
 
     state['seed'] = 123
     state['correction'] = 1.0
-    state['trainFreq'] = 2
-    state['validFreq'] = 100
-    state['hookFreq'] =  2
-    state['saveFreq'] = 500
+    state['trainFreq'] = 100
+    state['validFreq'] = 300
+    state['hookFreq'] =  100
+    state['saveFreq'] = 60
 
     state['out_sparse'] = -1
     state['out_bias_scale'] = -0.5
-    state['prefix'] = 'model_wmlp_'
+    state['prefix'] = 'model_wmlp_pento_'
     state['overwrite'] = 1
+    state['dropout'] = 0.5
 
     jobman(state, None)

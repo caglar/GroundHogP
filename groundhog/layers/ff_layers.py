@@ -283,9 +283,11 @@ class MultiLayer(Layer):
 
         if self.dropout < 1.:
             if use_noise:
-                emb_val = emb_val * self.trng.binomial(emb_val.shape, n=1, p=self.dropout, dtype=emb_val.dtype)
+                dmask = self.trng.binomial(emb_val.shape, n=1, p=self.dropout, dtype=emb_val.dtype)
+                emb_val = emb_val * dmask
             else:
                 emb_val = emb_val * self.dropout
+
         for dx in xrange(1, self.n_layers):
             emb_val = utils.dot(emb_val, W_ems[st_pos+dx])
             if b_ems:
@@ -295,16 +297,18 @@ class MultiLayer(Layer):
 
             if self.dropout < 1.:
                 if use_noise:
-                    emb_val = emb_val * self.trng.binomial(emb_val.shape, n=1, p=self.dropout, dtype=emb_val.dtype)
+                    dmask = self.trng.binomial(emb_val.shape, n=1, p=self.dropout, dtype=emb_val.dtype)
+                    emb_val = emb_val * dmask
                 else:
                     emb_val = emb_val * self.dropout
+
         self.out = emb_val
         return emb_val
 
 
 class MultiTensorLayer(Layer):
     """
-    Implementing a standard feed forward MLP
+    Implementing a standard feed-forward MLP
     """
     def __init__(self,
                  rng,
@@ -426,7 +430,7 @@ class MultiTensorLayer(Layer):
             if isinstance(activation[dx], (str, unicode)):
                 activation[dx] = eval(activation[dx])
 
-        super(MultiLayer, self).__init__(n_in, n_hids[-1], rng, name)
+        super(MultiTensorLayer, self).__init__(n_in, n_hids[-1], rng, name)
 
         self.trng = RandomStreams(self.rng.randint(int(1e6)))
         self.activation = activation
@@ -459,46 +463,50 @@ class MultiTensorLayer(Layer):
         self.W_em = theano.shared(W_em,
                                   name='W_0_%s'%self.name)
 
-        self.W_em = self.W_em.dimshuffle('x', 0, 'x', 1)
+        self.W_em2 = self.W_em.dimshuffle('x', 0, 'x', 1)
 
-        self.W_ems = [self.W_em]
+        self.W_ems = [self.W_em2]
 
         self.b_em = theano.shared(self.bias_fn[0](self.n_hids[0],
                                   self.bias_scale[0],self.rng),
                                   name='b_0_%s'%self.name)
 
-        self.b_em = self.b_em.dimshuffle('x', 'x', 'x', 0)
-        self.b_ems = [self.b_em]
+        self.b_em2 = self.b_em.dimshuffle('x', 'x', 'x', 0)
+        self.b_ems = [self.b_em2]
+        self.params += [self.W_em, self.b_em]
 
         for dx in xrange(1, self.n_layers):
-            W_em = self.init_fn[dx](self.n_hids[dx-1] / self.pieces[dx],
+            W_em = self.init_fn[dx](self.n_hids[dx-1],
                                     self.n_hids[dx],
                                     self.sparsity[dx],
                                     self.scale[dx],
                                     self.rng)
 
             W_em = theano.shared(W_em,
-                                 name='W_%d_%s'%(dx,self.name))
+                                 name='W_%d_%s' % (dx, self.name))
+            self.params += [W_em]
+            W_em2 = W_em.dimshuffle('x', 'x', 0, 1)
 
-            W_em = self.W_em.dimshuffle('x', 0, 'x', 1)
-
-            self.W_ems += [W_em]
+            self.W_ems += [W_em2]
 
             b_em = theano.shared(self.bias_fn[dx](self.n_hids[dx],
                                  self.bias_scale[dx],self.rng),
                                  name='b_%d_%s'%(dx,self.name))
 
-            b_em = self.b_em.dimshuffle('x', 'x', 'x', 0)
+            self.params += [b_em]
 
-            self.b_ems += [b_em]
+            b_em2 = b_em.dimshuffle('x', 'x', 'x', 0)
 
-        self.params = [x for x in self.W_ems]
+            self.b_ems += [b_em2]
 
+        #self.params = [x for x in self.W_ems]
+        """
         if self.learn_bias and self.learn_bias!='last':
             self.params = [x for x in self.W_ems] + [x for x in self.b_ems]
         elif self.learn_bias == 'last':
             self.params = [x for x in self.W_ems] + [x for x in
                                                      self.b_ems][:-1]
+        """
         self.params_grad_scale = [self._grad_scale for x in self.params]
 
         if self.weight_noise:
@@ -526,8 +534,8 @@ class MultiTensorLayer(Layer):
         else:
             W_ems = self.W_ems
             b_ems = self.b_ems
-
-        emb_val = TT.dot(state_below, W_ems[0], axis=[1, 1])
+        state_below = state_below.dimshuffle(0, 1, 2, 'x')
+        emb_val = TT.tensordot(state_below, W_ems[0], axes=[1, 1])
 
         if b_ems:
             emb_val += b_ems[0]
@@ -537,12 +545,17 @@ class MultiTensorLayer(Layer):
 
         if self.dropout < 1.:
             if use_noise:
-                emb_val = emb_val * self.trng.binomial(emb_val.shape, n=1, p=self.dropout, dtype=emb_val.dtype)
+                dmask = self.trng.binomial(emb_val.shape, n=1, p=self.dropout, dtype=emb_val.dtype)
+                emb_val = emb_val * dmask
             else:
                 emb_val = emb_val * self.dropout
 
         for dx in xrange(1, self.n_layers):
-            emb_val = utils.dot(emb_val, W_ems[st_pos+dx])
+            emb_val = emb_val.reshape((emb_val.shape[0],
+                                       state_below.shape[2],
+                                       self.n_hids[dx], 1))
+
+            emb_val = TT.tensordot(emb_val, W_ems[st_pos+dx], axes=[2, 2])
             if b_ems:
                 emb_val = self.activation[dx](emb_val+ b_ems[dx])
             else:
@@ -550,7 +563,8 @@ class MultiTensorLayer(Layer):
 
             if self.dropout < 1.:
                 if use_noise:
-                    emb_val = emb_val * self.trng.binomial(emb_val.shape, n=1, p=self.dropout, dtype=emb_val.dtype)
+                    dmask = self.trng.binomial(emb_val.shape, n=1, p=self.dropout, dtype=emb_val.dtype)
+                    emb_val = emb_val * dmask
                 else:
                     emb_val = emb_val * self.dropout
 

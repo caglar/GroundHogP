@@ -223,6 +223,7 @@ class CostLayer(Layer):
                     self.noise_additional_weights += [
                         theano.shared(W_add*0.,
                                       name='noise_W_add%d_%s'%(pos, self.name))]
+
         self.params = self.params + self.additional_weights
         self.noise_params += self.noise_additional_weights
         self.noise_params_shape_fn += [
@@ -247,7 +248,7 @@ class CostLayer(Layer):
         :param use_noise: flag. If true, noise is used when computing the
             output of the model
         """
-        raise NotImplemented
+        raise NotImplementedError
 
     def get_cost(self,
                  state_below,
@@ -305,7 +306,7 @@ class CostLayer(Layer):
         :param no_noise_bias: flag, stating if weight noise should be added
             to the bias as well, or only to the weights
         """
-        raise NotImplemented
+        raise NotImplementedError
 
     def get_grads(self,
                   state_below,
@@ -661,7 +662,6 @@ class SigmoidLayer(CostLayer):
     """
     Sigmoid output layer.
     """
-
     def _get_samples(self, model, length=30, temp=1, *inps):
         """
         See parent class.
@@ -676,7 +676,7 @@ class SigmoidLayer(CostLayer):
         if model.del_noise:
             model.del_noise()
         [values, probs] = model.sample_fn(length, temp, *inps)
-        # Assumes values matrix
+        #Assumes values matrix
         #print 'Generated sample is:'
         #print
         if values.ndim > 1:
@@ -747,6 +747,7 @@ class SigmoidLayer(CostLayer):
               temp=numpy.float32(1),
               use_noise=True,
               additional_inputs=None,
+              target=None,
               no_noise_bias=False):
         """
         Forward pass through the cost layer.
@@ -882,9 +883,8 @@ class SigmoidLayer(CostLayer):
 
 class SoftmaxLayer(CostLayer):
     """
-    Softmax output layer.
+        Softmax output layer.
     """
-
     def _get_samples(self, model, length=30, temp=1, *inps):
         """
         See parent class
@@ -992,13 +992,15 @@ class SoftmaxLayer(CostLayer):
         """
         if not full_softmax:
             assert target != None, 'target must be given'
+
         if self.rank_n_approx:
             if self.weight_noise and use_noise and self.noise_params:
                 emb_val = self.rank_n_activ(utils.dot(state_below,
-                                                      self.W_em1+self.nW_em1))
+                                                      self.W_em1 + self.nW_em1))
                 nW_em = self.nW_em2
             else:
                 emb_val = self.rank_n_activ(utils.dot(state_below, self.W_em1))
+
             W_em = self.W_em2
         else:
             W_em = self.W_em
@@ -1031,18 +1033,24 @@ class SoftmaxLayer(CostLayer):
             if self.weight_noise:
                 nW_em = nW_em[:, target]
                 W_em += nW_em
+
             if emb_val.ndim == 3:
-                emb_val = emb_val.reshape([emb_val.shape[0]*emb_val.shape[1], emb_val.shape[2]])
+                emb_val = emb_val.reshape([emb_val.shape[0] * emb_val.shape[1], emb_val.shape[2]])
+
             emb_val = (W_em.T * emb_val).sum(1) + self.b_em[target]
+
             if self.weight_noise and use_noise:
                 emb_val += self.nb_em[target]
+
             emb_val = temp * emb_val
 
         self.preactiv = emb_val
+
         if full_softmax:
             emb_val = utils.softmax(emb_val)
         else:
             emb_val = TT.nnet.sigmoid(emb_val)
+
         self.out = emb_val
         self.state_below = state_below
         self.model_output = emb_val
@@ -1058,6 +1066,7 @@ class SoftmaxLayer(CostLayer):
                                  temp=temp,
                                  additional_inputs=additional_inputs,
                                  use_noise=use_noise)
+
         pvals = class_probs
         if pvals.ndim == 1:
             pvals = pvals.dimshuffle('x', 0)
@@ -1084,21 +1093,6 @@ class SoftmaxLayer(CostLayer):
         """
 
         def _grab_probs(class_probs, target):
-            """
-            shape0 = class_probs.shape[0]
-            shape1 = class_probs.shape[1]
-            target_ndim = target.ndim
-            target_shape = target.shape
-            if target.ndim > 1:
-                target = target.flatten()
-            assert target.ndim == 1, 'make sure target is a vector of ints'
-            assert 'int' in target.dtype
-
-            pos = TT.arange(shape0)*shape1
-            new_targ = target + pos
-            return class_probs.flatten()[new_targ]
-            """
-
             if class_probs.ndim > 2:
                 class_probs = class_probs.reshape((class_probs.shape[0] * class_probs.shape[1], class_probs.shape[2]))
             else:
@@ -1160,6 +1154,7 @@ class SoftmaxLayer(CostLayer):
 
         if sum_over_time is None:
             sum_over_time = self.sum_over_time
+
         if sum_over_time:
             if state_below.ndim == 3:
                 cost = cost.reshape((state_below.shape[0],
@@ -1169,13 +1164,196 @@ class SoftmaxLayer(CostLayer):
                 self.cost = cost.sum()
         else:
             self.cost = cost.mean()
+
         if scale:
             self.cost = self.cost*scale
+
         if reg:
             self.cost = self.cost + reg
+
         self.mask = mask
         self.cost_scale = scale
         return self.cost
+
+
+class ParallelOutputLayer(Layer):
+    """
+        Multiple output softmax layer.
+    """
+    def __init__(self,
+                 out_layers,
+                 cost_scales):
+
+        self.out_layers = out_layers
+        self.noutputs = len(out_layers)
+        self.cost_scales = cost_scales
+        self.costs = []
+
+        super(ParallelOutputLayer, self).__init__()
+
+        self.params_grad_scale = []
+        self.params = []
+        self.nparams = []
+
+        for i in xrange(self.noutputs):
+            self.nparams += [len(self.out_layers[i].params)]
+            self.params += self.out_layers[i].params
+            self.params_grad_scale += self.out_layers[i].params_grad_scale
+
+    def fprop(self,
+              state_below,
+              temp=numpy.float32(1),
+              use_noise=True,
+              additional_inputs=None,
+              no_noise_bias=False,
+              targets=None,
+              full_softmax=True):
+        """
+        Forward pass through the cost layer.
+
+        :type state_below: tensor or layer
+        :param state_below: The theano expression (or groundhog layer)
+            representing the input of the cost layer
+
+        :type temp: float or tensor scalar
+        :param temp: scalar representing the temperature that should be used
+            when sampling from the output distribution
+
+        :type use_noise: bool
+        :param use_noise: flag. If true, noise is used when computing the
+            output of the model
+
+        :type no_noise_bias: bool
+        :param no_noise_bias: flag, stating if weight noise should be added
+            to the bias as well, or only to the weights
+        """
+
+        outputs = []
+        print("noutputs, ", self.noutputs)
+
+        for i in xrange(self.noutputs):
+            out = self.out_layers[i].fprop(state_below,
+                                           temp=temp,
+                                           use_noise=use_noise,
+                                           additional_inputs=additional_inputs,
+                                           no_noise_bias=no_noise_bias,
+                                           target=targets[i])
+            outputs.append(out)
+
+        self.out = outputs
+        self.model_output = outputs
+        self.state_below = state_below
+        return outputs
+
+    def get_cost(self,
+                 state_below,
+                 targets=None,
+                 mask=None,
+                 temp=1,
+                 reg=None,
+                 scale=None,
+                 sum_over_time=False,
+                 no_noise_bias=False,
+                 additional_inputs=None,
+                 use_noise=True):
+        """
+        See parent class
+        """
+        self.costs = []
+        print(targets)
+        for scale, out_layer, target in zip(self.cost_scales,
+                                            self.out_layers,
+                                            targets):
+
+            cost = scale * out_layer.get_cost(state_below,
+                                              target=target,
+                                              mask=mask,
+                                              temp=temp,
+                                              reg=reg,
+                                              scale=scale,
+                                              sum_over_time=sum_over_time,
+                                              no_noise_bias=no_noise_bias,
+                                              additional_inputs=additional_inputs,
+                                              use_noise=use_noise)
+
+            self.costs.append(cost)
+
+        import ipdb; ipdb.set_trace()
+
+        self.mask = mask
+        self.cost = sum(self.costs)
+        return self.cost
+
+    def get_grads(self,
+                  state_below,
+                  targets=None,
+                  mask=None,
+                  temp=1,
+                  reg=None,
+                  scale=None,
+                  additional_gradients=None,
+                  sum_over_time=None,
+                  use_noise=True,
+                  additional_inputs=None,
+                  no_noise_bias=False):
+
+        cost = self.get_cost(state_below,
+                             targets=targets,
+                             mask=mask,
+                             reg=reg,
+                             scale=scale,
+                             sum_over_time=sum_over_time,
+                             use_noise=use_noise,
+                             additional_inputs=additional_inputs,
+                             no_noise_bias=no_noise_bias)
+
+        logger.debug("Get grads")
+        grads = TT.grad(cost.mean(), self.params)
+        logger.debug("Got grads")
+
+        if additional_gradients:
+            for p, gp in additional_gradients:
+                if p in self.params:
+                    grads[self.params.index(p)] += gp
+
+        if self.additional_gradients:
+            for new_grads, to_replace, properties in self.additional_gradients:
+                gparams, params = new_grads
+                prop_expr = [x[1] for x in properties]
+                replace = [(x[0], TT.grad(cost, x[1])) for x in to_replace]
+                rval = theano.clone(gparams + prop_expr,
+                                    replace=replace)
+
+                gparams = rval[:len(gparams)]
+                prop_expr = rval[len(gparams):]
+
+                self.properties += [(x[0], y)
+                                    for x, y in zip(properties, prop_expr)]
+
+                for gp, p in zip(gparams, params):
+                    grads[self.params.index(p)] += gp
+
+        self.cost = cost
+        self.grads = grads
+        return cost, grads
+
+
+    def _get_samples(self, model, length=30, temp=1, *inps):
+        """
+        Sample a sequence from the model `model` whose output layer is given
+        by `self`.
+
+        :type model: groundhog model class
+        :param model: model that has `self` as its output layer
+
+        :type length: int
+        :param length: length of the sequence to sample
+
+        :type temp: float
+        :param temp: temperature to use during sampling
+        """
+
+        raise NotImplemented
 
 
 class MultiSoftmaxClassificationLayer(CostLayer):
@@ -1201,6 +1379,7 @@ class MultiSoftmaxClassificationLayer(CostLayer):
             kwargs["name"] = "out_layer_" + str(i)
             softlayer = SoftmaxLayer(*args, **kwargs)
             self.softouts.append(softlayer)
+
         super(MultiSoftmaxClassificationLayer, self).__init__(*args, **kwargs)
 
         self.params_grad_scale = []
@@ -1209,6 +1388,7 @@ class MultiSoftmaxClassificationLayer(CostLayer):
         for i in xrange(nsofts):
             self.params += self.softouts[i].params
             self.params_grad_scale += self.softouts[i].params_grad_scale
+
     def fprop(self,
               state_below,
               temp=numpy.float32(1),

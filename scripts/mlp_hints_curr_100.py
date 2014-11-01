@@ -4,8 +4,8 @@ This is a test of the deep RNN
 '''
 from groundhog.datasets.NParity_dataset import NParityIterator
 
-from groundhog.trainer.SGD_adadelta import SGD
-#from groundhog.trainer.vsgd import SGD
+#from groundhog.trainer.SGD_hessapprox3 import SGD
+from groundhog.trainer.SGD_ada_curriculum import SGD
 
 from groundhog.mainLoop import MainLoop
 
@@ -39,41 +39,46 @@ def get_data(state):
     out_format = lambda x, y: new_format(x, y)
     #path = "/data/lisa/exp/caglargul/codes/python/nbit_parity_data/par_fil_npar_2_nsamp_4_det.npy"
     #path = "/data/lisa/exp/caglargul/codes/python/nbit_parity_data/par_fil_npar_10_nsamp_100000.npy"
-    #path = "/data/lisa/exp/caglargul/codes/python/nbit_parity_data/par_fil_npar_100_nsamp_100000.npy"
-    path = "/data/lisa/exp/caglargul/codes/python/nbit_parity_data/par_fil_npar_20_nsamp_100000_det2.npy"
-    #path = "/data/lisa/exp/caglargul/codes/python/nbit_parity_data/par_fil_npar_15_nsamp_100000.npy"
     #path = "/data/lisa/exp/caglargul/codes/python/nbit_parity_data/par_fil_npar_17_nsamp_100000_det.npy"
+    #path = "/data/lisa/exp/caglargul/codes/python/nbit_parity_data/par_fil_npar_20_nsamp_100000_det2.npy"
+    path = "/data/lisa/exp/caglargul/codes/python/nbit_parity_data/par_fil_npar_100_nsamp_100000.npy"
+    #path = "/data/lisa/exp/caglargul/codes/python/nbit_parity_data/par_fil_npar_40_nsamp_120000.npy"
+    #path = "/data/lisa/exp/caglargul/codes/python/nbit_parity_data/par_fil_npar_30_nsamp_200000.npy"
 
     if state["bs"] == "full":
         train_data = NParityIterator(batch_size = state['bs'],
                                      start=0,
                                      stop=90000,
-                                     max_iters=20000,
+                                     max_iters=2000000,
+                                     use_hints=True,
                                      path=path)
 
         valid_data = NParityIterator(batch_size = state['bs'],
                                      start=90000,
                                      stop=95000,
                                      max_iters=1,
+                                     use_hints=True,
                                      path=path)
 
         test_data = NParityIterator(batch_size = state['bs'],
                                     start=95000,
                                     stop=100000,
                                     max_iters=1,
+                                    use_hints=True,
                                     path=path)
     else:
         train_data = NParityIterator(batch_size = int(state['bs']),
                                      start=0,
                                      stop=90000,
-                                     max_iters=20000,
+                                     max_iters=90000,
+                                     use_hints=True,
                                      path=path)
         valid_data = NParityIterator(batch_size = int(state['bs']),
                                      start=90000,
                                      stop=100000,
                                      max_iters=1,
+                                     use_hints=True,
                                      path=path)
-        #valid_data = train_data
         test_data = None
 
         """
@@ -81,6 +86,7 @@ def get_data(state):
                                     start=95000,
                                     stop=100000,
                                     max_iters=1,
+                                    use_hints=True,
                                     path=path)
         """
     return train_data, valid_data, test_data
@@ -125,10 +131,11 @@ def powerup(x, p=None, c=None):
 def jobman(state, channel):
     # load dataset
     state['nouts'] = 2
-    state['nins'] = 20
-
+    state['nins'] = 100
     rng = numpy.random.RandomState(state['seed'])
     train_data, valid_data, test_data = get_data(state)
+    scale = theano.shared(numpy.float32(state["cost_scales"][1]), name="lambda_scale")
+    state["cost_scales"] = [1-scale, scale]
 
     ########### Training graph #####################
     ## 1. Inputs
@@ -136,7 +143,9 @@ def jobman(state, channel):
     x_valid = TT.matrix('x', dtype='float32')
 
     y = TT.lvector('y')
+    y_valid = TT.lvector('y')
     hints = TT.lvector('hints')
+    hints_valid = TT.lvector('hints')
 
     # 2. Layers and Operators
     bs = state['bs']
@@ -145,14 +154,22 @@ def jobman(state, channel):
     if state['activ'] == 'powerup' or state['activ'] == 'maxout':
         n_pieces = state['maxout_part']
 
-    mlp = MultiLayer(rng,
-                     n_in=state['nins'],
-                     n_hids=eval(state['dim']),
-                     activation=eval(state['activ']),
-                     init_fn=state['weight_init_fn'],
-                     scale=state['weight_scale'],
-                     learn_bias=True,
-                     name='mlp')
+    ff_layers = []
+    nin = state['nins']
+
+    for i in xrange(state['nlayers']):
+        if i >= 1:
+            nin = eval(state['dim'])[0]
+        mlp = MultiLayer(rng,
+                         n_in=nin,
+                         n_hids=eval(state['dim']),
+                         activation=eval(state['activ']),
+                         init_fn=state['weight_init_fn'],
+                         scale=state['weight_scale'],
+                         learn_bias=True,
+                         name='mlp_%d' % i)
+
+        ff_layers.append(mlp)
 
     if state['activ'] == 'powerup' or state['activ'] == 'maxout':
         pendim = eval(state['dim'])[-1] / state['maxout_part']
@@ -160,16 +177,17 @@ def jobman(state, channel):
         pendim = eval(state['dim'])[-1]
 
     print("pendim ", pendim)
-
-    output_layer = SoftmaxLayer(rng,
-                                pendim,
-                                state['nouts'],
-                                bias_scale=state['out_bias_scale'],
-                                scale=state['weight_scale'],
-                                sparsity=state['out_sparse'],
-                                init_fn=state['weight_init_fn'],
-                                sum_over_time=False,
-                                name='out')
+    output_layer = MultiSoftmaxClassificationLayer(state["noutputs"],
+                                                   state["nsofts"],
+                                                   state["cost_scales"],
+                                                   rng=rng,
+                                                   n_in=pendim,
+                                                   bias_scale=state['out_bias_scale'],
+                                                   scale=state['weight_scale'],
+                                                   sparsity=state['out_sparse'],
+                                                   init_fn=state['weight_init_fn'],
+                                                   sum_over_time=True,
+                                                   name='out')
 
     def update_lr(obj, cost):
         stp = obj.step
@@ -188,16 +206,25 @@ def jobman(state, channel):
     if state['lr_adapt']:
         output_layer.add_schedule(update_lr)
 
-    output_sto = output_layer(mlp(x_train))
-    train_model = output_sto.train(target=y) / TT.cast(y.shape[0], 'float32')
+    mlp_out = x_train
+    for i in xrange(state['nlayers']):
+        mlp_out = ff_layers[i](mlp_out)
 
-    valid_model = output_layer(mlp(x_valid,
-                                   use_noise=False),
-                                   use_noise=False).validate(target=y)
+    output_sto = output_layer(mlp_out)
+    train_model = output_sto.train(target=y, hints=hints) / TT.cast(y.shape[0], 'float32')
 
-    valid_fn = theano.function([x_valid, y],
+    mlp_valid_out = x_valid
+    for i in xrange(state['nlayers']):
+        mlp_valid_out = ff_layers[i](mlp_valid_out,
+                                     use_noise=False)
+
+    valid_model = output_layer(mlp_valid_out,
+                               use_noise=False).validate(target=y_valid, hints=hints_valid)
+
+    valid_fn = theano.function([x_valid, y_valid, hints_valid],
                                [valid_model.cost,
-                                valid_model.model_output],
+                                valid_model.out[0],
+                                valid_model.out[1]],
                                 name = 'valid_fn',
                                 on_unused_input='warn')
 
@@ -212,7 +239,7 @@ def jobman(state, channel):
         model.momentum_exclude = [x['p'] for x in mlp.cc_params] + \
                 [x['c'] for x in mlp.cc_params]
 
-    algo = SGD(model, state, train_data)
+    algo = SGD(model, state, train_data, scale)
     hooks = []
     main = MainLoop(train_data,
                     valid_data,
@@ -231,26 +258,28 @@ if __name__=='__main__':
 
     state['nclasses'] = 2
     state['reload'] = False
-    state['dim'] = '[800]' #5000
+    state['dim'] = '[1000]' #5000
+
     state['activ'] = 'lambda x: TT.maximum(x, 0)'
     state['bias'] = 0.
     state['exclude_powers'] = False
     state['maxout_part'] = 1.
+    state['nlayers'] = 3
 
-    state['nlayers'] = 2
     state['weight_init_fn'] = 'sample_weights_orth'
     state['weight_scale'] = 0.01
 
     state['lr'] = .15
     state['minlr'] = 1e-8
-    state['momentum'] = 1.
+    state['moment'] = .55
 
-    state['switch'] = 100
+    state['switch'] = 50
 
     state['cutoff'] = 0.
     state['cutoff_rescale_length'] = 0.
+    state["cpu_subspace"] = True
 
-    state['lr_adapt'] = False
+    state['lr_adapt'] = True
     state['lr_adapt_exp'] = False
     state['lr_beta'] = 500. * 100. # 0.99
     state['lr_start'] = 0
@@ -262,23 +291,30 @@ if __name__=='__main__':
 
     state['max_norm'] = 0.
 
-    state['bs']  = 1000
+    state['bs']  = 1200
     state['reset'] = -1
 
-    state['loopIters'] = 500 * 500
+    state['loopIters'] = 50000 * 100
     state['timeStop'] = 24*60*7
     state['minerr'] = -1
 
     state['seed'] = 123
-    state['correction'] = 1.0
-    state['trainFreq'] = 2
-    state['validFreq'] = 100
-    state['hookFreq'] =  2
+
+    state['trainFreq'] = 2 #100
+    state['validFreq'] = 100 #1000
+    state['hookFreq'] =  2 #1000
     state['saveFreq'] = 500
 
+    state['profile'] = 0
     state['out_sparse'] = -1
     state['out_bias_scale'] = -0.5
     state['prefix'] = 'model_wmlp_'
     state['overwrite'] = 1
 
+    state["noutputs"] = [2, 31]
+    state["nsofts"] = 2
+
+    state["cost_tau"] = 1.00000009
+    state["cost_scales"] = [0.14, 0.86]
+    state["cost_scale_min"] = 0.3
     jobman(state, None)

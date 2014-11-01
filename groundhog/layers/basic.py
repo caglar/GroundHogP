@@ -91,7 +91,7 @@ class Container(object):
                 return arg.out
             else:
                 return arg
-
+        #import ipdb; ipdb.set_trace()
 
         if isinstance(arg, Container):
             self.merge_params(arg)
@@ -134,8 +134,8 @@ class Container(object):
         new_noise_params = [noise_param
                 for noise_param in model.noise_params
                        if noise_param not in self.noise_params]
-        new_inputs =[inp for inp in model.inputs if inp not in self.inputs]
-        new_schedules =[schedule for schedule in model.schedules
+        new_inputs = [inp for inp in model.inputs if inp not in self.inputs]
+        new_schedules = [schedule for schedule in model.schedules
                        if schedule not in self.schedules]
         new_updates = [update for update in model.updates
                        if update not in self.updates]
@@ -427,6 +427,7 @@ class Layer(Container):
         """
         if not hasattr(self, 'get_grads'):
             raise TypeError('Non-output layer does not support this method')
+
         new_obj = utils.copy(self)
         try:
             o_args, o_kwargs = new_obj.prev_args
@@ -441,7 +442,7 @@ class Layer(Container):
 
     def get_sample(self, **kwargs):
         """
-        Get a sample from the curren model.
+        Get a sample from the current model.
         ! Only works for output layers
         """
         if not hasattr(self, 'get_cost'):

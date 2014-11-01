@@ -62,7 +62,7 @@ class SGD(object):
                                                 dtype=x.dtype),
                                     name=x.name) for x in model.inputs]
 
-	if 'profile' not in self.state:
+        if 'profile' not in self.state:
             self.state['profile'] = 0
 
         ###################################

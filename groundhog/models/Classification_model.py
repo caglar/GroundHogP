@@ -140,7 +140,7 @@ class Classification_Model(Model):
         for vals in data_iterator:
             #n_steps += vals['x'].shape[0]
             #import ipdb; ipdb.set_trace()
-
+            classifications2 = None
             if isinstance(vals, dict):
                 if self.del_noise and self.clean_noise_validation:
                     if self.need_inputs_for_generating_noise:
@@ -164,21 +164,32 @@ class Classification_Model(Model):
             if vals['x'].shape[0] > 0:
                 cost += _rvals[0]
 
-            classifications = numpy.argmax(_rvals[1], axis=1)
+            if _rvals[1].ndim > 1:
+                classifications = numpy.argmax(_rvals[1], axis=1)
+            else:
+                classifications = numpy.argmax(_rvals[1])
 
             if self.use_hints:
-                classifications2 = numpy.argmax(_rvals[2], axis=1)
+                if _rvals[1].ndim > 1:
+                    classifications2 = numpy.argmax(_rvals[1], axis=1)
+                else:
+                    classifications2 = numpy.argmax(_rvals[1])
+
 
             labels = vals['y']
             if self.use_hints:
                 hints = vals['hints']
 
-            n_steps += classifications.shape[0]
+            if type(classifications) is numpy.int64:
+                n_steps += 1
+            else:
+                n_steps += classifications.shape[0]
 
             #Those controls are needed for the sequential classifications.
             if classifications.ndim != 1:
                 classifications = classifications.flatten()
-                classifications2 = classifications2.flatten()
+                if classifications2 is not None and classifications2.ndim > 1:
+                    classifications2 = classifications2.flatten()
 
             if labels.ndim != 1:
                 labels = labels.flatten()

@@ -282,7 +282,7 @@ def jobman(state, channel):
         x_emb = emb_words(word_tm1, use_noise = False, one_step=True)
         h0 = rec(x_emb, state_before=h_tm1, one_step=True, use_noise=False)[-1]
         outhid = outhid_dropout(outhid_activ(emb_state(h0, use_noise=False, one_step=True) +
-            emb_words_out(word_tm1, use_noise=False, one_step=True), one_step=True), 
+            emb_words_out(word_tm1, use_noise=False, one_step=True), one_step=True),
             use_noise=False, one_step=True)
         word = output_layer.get_sample(state_below=outhid, additional_inputs=[h0], temp=1.)
         return word, h0

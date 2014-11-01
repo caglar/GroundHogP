@@ -77,12 +77,11 @@ class SGD(object):
                                                 dtype=x.dtype),
                                     name=x.name) for x in model.inputs]
 
-	if 'profile' not in self.state:
+        if 'profile' not in self.state:
             self.state['profile'] = 0
-
-        ###################################
-        # Step 1. Compile training function
-        ###################################
+            ###################################
+            # Step 1. Compile training function
+            ###################################
         logger.debug('Constructing grad function')
         loc_data = self.gdata
         self.prop_exprs = [x[1] for x in model.properties]
@@ -127,10 +126,13 @@ class SGD(object):
 
         logger.debug('Compiling grad function')
         st = time.time()
-        self.train_fn = theano.function(
-            [], outs, name='train_function',
-            updates = updates,
-            givens = zip(model.inputs, loc_data))
+
+        self.train_fn = theano.function([],
+                                        outs,
+                                        name='train_function',
+                                        updates = updates,
+                                        givens = zip(model.inputs, loc_data))
+
         logger.debug('took {}'.format(time.time() - st))
 
         self.lr = numpy.float32(1.)
@@ -153,7 +155,7 @@ class SGD(object):
         self.old_cost = 1e20
         self.schedules = model.get_schedules()
         self.return_names = self.prop_names + \
-                ['cost',
+                       ['cost',
                         'error',
                         'time_step',
                         'whole_time', 'lr']
@@ -168,6 +170,7 @@ class SGD(object):
             batch = self.model.perturb(**batch)
         else:
             batch = self.model.perturb(*batch)
+
         # Load the dataset into GPU
         # Note: not the most efficient approach in general, as it involves
         # each batch is copied individually on gpu
@@ -177,9 +180,13 @@ class SGD(object):
         else:
             for gdata, data in zip(self.gdata, batch):
                 gdata.set_value(data, borrow=True)
-        # Run the trianing function
+
+        #
+        # Run the training function
+        #
         g_st = time.time()
         rvals = self.train_fn()
+
         for schedule in self.schedules:
             schedule(self, rvals[-1])
         self.update_fn()
@@ -205,4 +212,6 @@ class SGD(object):
                        ('lr', float(self.lr)),
                        ('time_step', float(g_ed - g_st)),
                        ('whole_time', float(whole_time))]+zip(self.prop_names, rvals))
+
         return ret
+
