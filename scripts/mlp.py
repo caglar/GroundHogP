@@ -6,6 +6,7 @@ from groundhog.datasets.NParity_dataset import NParityIterator
 
 from groundhog.trainer.SGD_adadelta import SGD
 #from groundhog.trainer.vsgd import SGD
+#from groundhog.trainer.SGD_hessapprox3 import SGD
 
 from groundhog.mainLoop import MainLoop
 
@@ -39,8 +40,8 @@ def get_data(state):
     out_format = lambda x, y: new_format(x, y)
     #path = "/data/lisa/exp/caglargul/codes/python/nbit_parity_data/par_fil_npar_2_nsamp_4_det.npy"
     #path = "/data/lisa/exp/caglargul/codes/python/nbit_parity_data/par_fil_npar_10_nsamp_100000.npy"
-    #path = "/data/lisa/exp/caglargul/codes/python/nbit_parity_data/par_fil_npar_100_nsamp_100000.npy"
-    path = "/data/lisa/exp/caglargul/codes/python/nbit_parity_data/par_fil_npar_20_nsamp_100000_det2.npy"
+    path = "/data/lisa/exp/caglargul/codes/python/nbit_parity_data/par_fil_npar_100_nsamp_100000.npy"
+    #path = "/data/lisa/exp/caglargul/codes/python/nbit_parity_data/par_fil_npar_20_nsamp_100000_det2.npy"
     #path = "/data/lisa/exp/caglargul/codes/python/nbit_parity_data/par_fil_npar_15_nsamp_100000.npy"
     #path = "/data/lisa/exp/caglargul/codes/python/nbit_parity_data/par_fil_npar_17_nsamp_100000_det.npy"
 
@@ -125,7 +126,7 @@ def powerup(x, p=None, c=None):
 def jobman(state, channel):
     # load dataset
     state['nouts'] = 2
-    state['nins'] = 20
+    state['nins'] = 100
 
     rng = numpy.random.RandomState(state['seed'])
     train_data, valid_data, test_data = get_data(state)
@@ -231,21 +232,21 @@ if __name__=='__main__':
 
     state['nclasses'] = 2
     state['reload'] = False
-    state['dim'] = '[800]' #5000
+    state['dim'] = '[1000]' #5000
     state['activ'] = 'lambda x: TT.maximum(x, 0)'
     state['bias'] = 0.
     state['exclude_powers'] = False
     state['maxout_part'] = 1.
 
-    state['nlayers'] = 2
+    state['nlayers'] = 3
     state['weight_init_fn'] = 'sample_weights_orth'
     state['weight_scale'] = 0.01
 
     state['lr'] = .15
     state['minlr'] = 1e-8
-    state['momentum'] = 1.
+    state['momentum'] = 0.5
 
-    state['switch'] = 100
+    state['switch'] = 500
 
     state['cutoff'] = 0.
     state['cutoff_rescale_length'] = 0.
@@ -262,12 +263,13 @@ if __name__=='__main__':
 
     state['max_norm'] = 0.
 
-    state['bs']  = 1000
+    state['bs']  = 1200
     state['reset'] = -1
 
     state['loopIters'] = 500 * 500
     state['timeStop'] = 24*60*7
     state['minerr'] = -1
+    state['switch'] = 500
 
     state['seed'] = 123
     state['correction'] = 1.0
