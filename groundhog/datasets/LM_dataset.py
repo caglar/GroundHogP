@@ -171,15 +171,22 @@ class LMIterator(object):
         elif cond:
             self.offset = 0
             raise StopIteration
+
         if inc_offset >= self.data.shape[0]-self.shift:
             inc_offset = self.data.shape[0]-self.shift
+
         data_part = self.data[self.offset:inc_offset]
+        diff_sz = inc_offset - self.offset
+        if diff_sz % self.batch_size != 0:
+            raise StopIteration
+
         target = self.data[self.offset+self.shift:inc_offset+self.shift]
 
         self.offset = self.offset + self.batch_size*self.seq_len
-        target = target.reshape(self.batch_size, -1)
+        target = target.reshape(diff_sz, -1)
         target = target.T
-        data_part = data_part.reshape(self.batch_size,-1)
+
+        data_part = data_part.reshape(diff_sz, -1)
         data_part = data_part.T
         self.batch_no += 1
         if self.batch_size == 1:

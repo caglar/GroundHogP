@@ -23,31 +23,31 @@ theano.config.allow_gc = True
 rect = lambda x: TT.maximum(0, x)
 
 def get_data(state):
+
     def out_format (x, y, r):
         return {'x':x, 'y' :y}# 'reset': r}
 
     def out_format_valid (x, y, r):
         return {'x':x, 'y' :y, 'reset': r}
 
-    train_data = LMIterator(
-            batch_size=state['bs'],
-            path="/data/lisa/data/PennTreebankCorpus/pentree_char_and_word.npz",
-            stop=-1,
-            seq_len = state['seqlen'],
-            mode="train",
-            chunks=state["chunks"],
-            shift = 1,
-            output_format = out_format,
-            can_fit=True)
+    train_data = LMIterator(batch_size=state['bs'],
+                            path="/data/lisa/data/PennTreebankCorpus/pentree_char_and_word.npz",
+                            stop=-1,
+                            seq_len=state['seqlen'],
+                            mode="train",
+                            chunks=state["chunks"],
+                            shift=1,
+                            output_format = out_format,
+                            can_fit=True)
 
     valid_data = LMIterator(batch_size=state['val_bs'],
                             path="/data/lisa/data/PennTreebankCorpus/pentree_char_and_word.npz",
                             stop=-1,
                             use_infinite_loop=False,
-                            seq_len= state['seqlen'],
+                            seq_len=state['seqlen'],
                             mode="train",
                             chunks=state["chunks"],
-                            shift = 1,
+                            shift=1,
                             output_format = out_format_valid,
                             can_fit=True)
 
@@ -56,7 +56,7 @@ def get_data(state):
                            stop=-1,
                            use_infinite_loop=False,
                            allow_short_sequences=True,
-                           seq_len= state['seqlen'],
+                           seq_len=state['seqlen'],
                            mode="test",
                            chunks=state["chunks"],
                            shift = 1,
@@ -143,16 +143,16 @@ def jobman(state, channel):
     emb_words_rep = emb_words(tx)
 
     # 3. Constructing the model
-    rec_layer = rec(state_below=emb_words_rep(tx),
-                    nsteps=state['seqlen'],
-                    init_state=h0,
-                    batch_size=state['bs'])
+    rec_layer = rec(state_below = emb_words_rep(tx),
+                    nsteps = state['seqlen'],
+                    init_state = h0,
+                    batch_size = state['bs'])
 
     train_model = output_layer.train(state_below=rec_layer,
                                      target=ty,
                                      reg=None,
                                      mask=None,
-                                     scale=numpy.float32(1./state['seqlen']))
+                                     scale=numpy.float32(1. / state['seqlen']))
 
     if state['val_bs'] == 1:
         vx = TT.lvector('x')
@@ -169,7 +169,7 @@ def jobman(state, channel):
         h0 = theano.shared(numpy.zeros((state['val_bs'], state['nhids'])).astype("float32"))
 
     rec_layer = rec(state_below=emb_words_rep(vx, use_noise=False),
-                    nsteps = vx.shape[0],
+                    nsteps = state['seqlen'],
                     init_state = h0*reset,
                     use_noise = False,
                     batch_size=state['val_bs'])
@@ -180,7 +180,7 @@ def jobman(state, channel):
                                                          sum_over_time=True)
 
     valid_fn = theano.function([vx, vy, reset],
-                               valid_model.cost,
+                               (valid_model.cost / state['val_bs'] ),
                                name='valid_fn',
                                updates=[(h0, nw_h0)])
 
@@ -225,8 +225,8 @@ if __name__=='__main__':
     state['weight_noise'] = False
     state['weight_noise_amount'] = 0.1
     state['reseting'] = False
-    state['bs']  = 400
-    state['val_bs'] = 1000
+    state['bs']  = 200
+    state['val_bs'] = 250
     state['reset'] = -1
     state['seqlen'] = 160
 
@@ -242,7 +242,7 @@ if __name__=='__main__':
 
     state['trainFreq'] = 50
     state['hookFreq'] = 0
-    state['validFreq'] = 150
+    state['validFreq'] = 300
     state['saveFreq'] = 60
 
     state['prefix'] = 'penn_rnn2_corr_adaprop0.5_v3'
