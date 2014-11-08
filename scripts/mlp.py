@@ -4,9 +4,9 @@ This is a test of the deep RNN
 '''
 from groundhog.datasets.NParity_dataset import NParityIterator
 
-from groundhog.trainer.SGD_adadelta import SGD
+#from groundhog.trainer.SGD_adadelta import SGD
 #from groundhog.trainer.vsgd import SGD
-#from groundhog.trainer.SGD_hessapprox3 import SGD
+from groundhog.trainer.SGD_hessapprox3 import SGD
 
 from groundhog.mainLoop import MainLoop
 
@@ -40,7 +40,9 @@ def get_data(state):
     out_format = lambda x, y: new_format(x, y)
     #path = "/data/lisa/exp/caglargul/codes/python/nbit_parity_data/par_fil_npar_2_nsamp_4_det.npy"
     #path = "/data/lisa/exp/caglargul/codes/python/nbit_parity_data/par_fil_npar_10_nsamp_100000.npy"
-    path = "/data/lisa/exp/caglargul/codes/python/nbit_parity_data/par_fil_npar_100_nsamp_100000.npy"
+    #path = "/data/lisa/exp/caglargul/codes/python/nbit_parity_data/par_fil_npar_100_nsamp_100000.npy"
+    path = "/data/lisa/exp/caglargul/codes/python/nbit_parity_data/par_fil_npar_50_nsamp_200000.npy"
+
     #path = "/data/lisa/exp/caglargul/codes/python/nbit_parity_data/par_fil_npar_20_nsamp_100000_det2.npy"
     #path = "/data/lisa/exp/caglargul/codes/python/nbit_parity_data/par_fil_npar_15_nsamp_100000.npy"
     #path = "/data/lisa/exp/caglargul/codes/python/nbit_parity_data/par_fil_npar_17_nsamp_100000_det.npy"
@@ -48,34 +50,39 @@ def get_data(state):
     if state["bs"] == "full":
         train_data = NParityIterator(batch_size = state['bs'],
                                      start=0,
-                                     stop=90000,
+                                     stop=190000,
                                      max_iters=20000,
                                      path=path)
 
         valid_data = NParityIterator(batch_size = state['bs'],
-                                     start=90000,
-                                     stop=95000,
+                                     start=190000,
+                                     stop=195000,
                                      max_iters=1,
                                      path=path)
 
         test_data = NParityIterator(batch_size = state['bs'],
-                                    start=95000,
-                                    stop=100000,
+                                    start=195000,
+                                    stop=200000,
                                     max_iters=1,
                                     path=path)
     else:
         train_data = NParityIterator(batch_size = int(state['bs']),
                                      start=0,
-                                     stop=90000,
+                                     stop=190000,
                                      max_iters=20000,
                                      path=path)
         valid_data = NParityIterator(batch_size = int(state['bs']),
-                                     start=90000,
-                                     stop=100000,
+                                     start=190000,
+                                     stop=195000,
                                      max_iters=1,
                                      path=path)
         #valid_data = train_data
-        test_data = None
+        #test_data = None
+        test_data = NParityIterator(batch_size = state['bs'],
+                                    start=195000,
+                                    stop=200000,
+                                    max_iters=1,
+                                    path=path)
 
         """
         test_data = NParityIterator(batch_size = int(state['bs']),
@@ -126,7 +133,7 @@ def powerup(x, p=None, c=None):
 def jobman(state, channel):
     # load dataset
     state['nouts'] = 2
-    state['nins'] = 100
+    state['nins'] = 50
 
     rng = numpy.random.RandomState(state['seed'])
     train_data, valid_data, test_data = get_data(state)
@@ -244,9 +251,9 @@ if __name__=='__main__':
 
     state['lr'] = .15
     state['minlr'] = 1e-8
-    state['momentum'] = 0.5
+    state['momentum'] = 5.0
 
-    state['switch'] = 500
+    state['switch'] = 400
 
     state['cutoff'] = 0.
     state['cutoff_rescale_length'] = 0.
@@ -263,7 +270,7 @@ if __name__=='__main__':
 
     state['max_norm'] = 0.
 
-    state['bs']  = 1200
+    state['bs']  = 2400
     state['reset'] = -1
 
     state['loopIters'] = 500 * 500
