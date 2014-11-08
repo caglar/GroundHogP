@@ -45,7 +45,7 @@ def get_data(state):
                             stop=-1,
                             use_infinite_loop=False,
                             seq_len=state['seqlen'],
-                            mode="train",
+                            mode="valid",
                             chunks=state["chunks"],
                             shift=1,
                             output_format = out_format_valid,
@@ -118,14 +118,15 @@ def jobman(state, channel):
                                 sum_over_time=True,
                                 use_nce=False,
                                 name='out')
-
+    nsteps = 0
     if state['bs'] == 1:
         tx = TT.lvector('x')
         ty = TT.lvector('y')
+        nsteps = state['seqlen']
     else:
         tx = TT.lmatrix('x')
         ty = TT.lmatrix('y')
-
+        nsteps = state['seqlen']
         if state['debug']:
             tx.tag.test_value = numpy.random.random_integers(0, 10,
             size=(state['bs'], state['seqlen']))
@@ -144,7 +145,7 @@ def jobman(state, channel):
 
     # 3. Constructing the model
     rec_layer = rec(state_below = emb_words_rep(tx),
-                    nsteps = state['seqlen'],
+                    nsteps = nsteps,
                     init_state = h0,
                     batch_size = state['bs'])
 
@@ -153,13 +154,15 @@ def jobman(state, channel):
                                      reg=None,
                                      mask=None,
                                      scale=numpy.float32(1. / state['seqlen']))
-
+    vnsteps = 0
     if state['val_bs'] == 1:
         vx = TT.lvector('x')
         vy = TT.lvector('y')
+        vnsteps = vy.shape[0]
     else:
         vx = TT.lmatrix('x')
         vy = TT.lmatrix('y')
+        vnsteps = vy.shape[1]
 
     reset = TT.scalar('reset')
 
@@ -169,7 +172,7 @@ def jobman(state, channel):
         h0 = theano.shared(numpy.zeros((state['val_bs'], state['nhids'])).astype("float32"))
 
     rec_layer = rec(state_below=emb_words_rep(vx, use_noise=False),
-                    nsteps = state['seqlen'],
+                    nsteps = vnsteps,
                     init_state = h0*reset,
                     use_noise = False,
                     batch_size=state['val_bs'])
@@ -180,7 +183,7 @@ def jobman(state, channel):
                                                          sum_over_time=True)
 
     valid_fn = theano.function([vx, vy, reset],
-                               (valid_model.cost / state['val_bs'] ),
+                               (valid_model.cost),
                                name='valid_fn',
                                updates=[(h0, nw_h0)])
 
@@ -189,7 +192,6 @@ def jobman(state, channel):
                      valid_fn = valid_fn,
                      clean_before_noise_fn = False,
                      noise_fn = None,
-                     #indx_word="/data/lisa/data/chokyun/nc8.en.chr.wrd_indxs_word.pkl",
                      rng = rng)
 
     algo = SGD(model, state, train_data)
@@ -201,7 +203,6 @@ def jobman(state, channel):
 
     if state['reload']:
         main.load()
-
     main.main()
 
 
@@ -209,26 +210,25 @@ if __name__=='__main__':
     state = {}
 
     state["chunks"] = "chars"
-    state['nout'] = 10000
-    state['nin'] = 10000
     state['reload'] = False
     state['noisy_ll'] = 0
-    state['nhids'] = 800
+    state['nhids'] = 600
 
     state['reseting'] = True
     state['lr'] = 1.
-    state['minlr'] = 1e-6
+    state['minlr'] = 0.1
+
     state['dictionary']= "/data/lisa/data/PennTreebankCorpus/dictionaries.npz"
-    state['momentum'] = 2.0
+    state['momentum'] = 1.0
     state['cutoff_rescale_length'] = False
 
     state['weight_noise'] = False
     state['weight_noise_amount'] = 0.1
     state['reseting'] = False
-    state['bs']  = 200
-    state['val_bs'] = 250
+    state['bs']  = 1000
+    state['val_bs'] = 1
     state['reset'] = -1
-    state['seqlen'] = 160
+    state['seqlen'] = 150
 
     state['loopIters'] = 15000000
     state['timeStop'] = 320 * 600
