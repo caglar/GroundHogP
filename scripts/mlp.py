@@ -4,9 +4,9 @@ This is a test of the deep RNN
 '''
 from groundhog.datasets.NParity_dataset import NParityIterator
 
-#from groundhog.trainer.SGD_adadelta import SGD
+from groundhog.trainer.SGD_adadelta import SGD
 #from groundhog.trainer.vsgd import SGD
-from groundhog.trainer.SGD_hessapprox3 import SGD
+#from groundhog.trainer.SGD_hessapprox3 import SGD
 
 from groundhog.mainLoop import MainLoop
 
@@ -41,8 +41,9 @@ def get_data(state):
     #path = "/data/lisa/exp/caglargul/codes/python/nbit_parity_data/par_fil_npar_2_nsamp_4_det.npy"
     #path = "/data/lisa/exp/caglargul/codes/python/nbit_parity_data/par_fil_npar_10_nsamp_100000.npy"
     #path = "/data/lisa/exp/caglargul/codes/python/nbit_parity_data/par_fil_npar_100_nsamp_100000.npy"
-    path = "/data/lisa/exp/caglargul/codes/python/nbit_parity_data/par_fil_npar_50_nsamp_200000.npy"
-
+    #path = "/data/lisa/exp/caglargul/codes/python/nbit_parity_data/par_fil_npar_200_nsamp_100000.npy"
+    path = "/data/lisa/exp/caglargul/codes/python/nbit_parity_data/par_fil_npar_1000_nsamp_100000.npy"
+    #path = "/data/lisa/exp/caglargul/codes/python/nbit_parity_data/par_fil_npar_50_nsamp_200000.npy"
     #path = "/data/lisa/exp/caglargul/codes/python/nbit_parity_data/par_fil_npar_20_nsamp_100000_det2.npy"
     #path = "/data/lisa/exp/caglargul/codes/python/nbit_parity_data/par_fil_npar_15_nsamp_100000.npy"
     #path = "/data/lisa/exp/caglargul/codes/python/nbit_parity_data/par_fil_npar_17_nsamp_100000_det.npy"
@@ -68,19 +69,19 @@ def get_data(state):
     else:
         train_data = NParityIterator(batch_size = int(state['bs']),
                                      start=0,
-                                     stop=190000,
-                                     max_iters=20000,
+                                     stop=90000,
+                                     max_iters=20000000,
                                      path=path)
         valid_data = NParityIterator(batch_size = int(state['bs']),
-                                     start=190000,
-                                     stop=195000,
+                                     start=90000,
+                                     stop=95000,
                                      max_iters=1,
                                      path=path)
         #valid_data = train_data
         #test_data = None
         test_data = NParityIterator(batch_size = state['bs'],
-                                    start=195000,
-                                    stop=200000,
+                                    start=95000,
+                                    stop=100000,
                                     max_iters=1,
                                     path=path)
 
@@ -133,7 +134,7 @@ def powerup(x, p=None, c=None):
 def jobman(state, channel):
     # load dataset
     state['nouts'] = 2
-    state['nins'] = 50
+    state['nins'] = 1000
 
     rng = numpy.random.RandomState(state['seed'])
     train_data, valid_data, test_data = get_data(state)
@@ -179,25 +180,8 @@ def jobman(state, channel):
                                 sum_over_time=False,
                                 name='out')
 
-    def update_lr(obj, cost):
-        stp = obj.step
-
-        if isinstance(obj.state['lr_start'], int) and stp > obj.state['lr_start']:
-            time = float(stp - obj.state['lr_start'])
-            if obj.state['lr_adapt_exp']:
-                if time % obj.state['lr_tau'] == 0 and stp > 0:
-                    new_lr = obj.lr * obj.state['lr_beta']
-                else:
-                    new_lr = obj.lr
-            else:
-                new_lr = obj.state['clr']/(1 + time / obj.state['lr_beta'])
-            obj.lr = new_lr
-
-    if state['lr_adapt']:
-        output_layer.add_schedule(update_lr)
-
     output_sto = output_layer(mlp(x_train))
-    train_model = output_sto.train(target=y) / TT.cast(y.shape[0], 'float32')
+    train_model = output_sto.train(target=y) #/ TT.cast(y.shape[0], 'float32')
 
     valid_model = output_layer(mlp(x_valid,
                                    use_noise=False),
@@ -239,23 +223,23 @@ if __name__=='__main__':
 
     state['nclasses'] = 2
     state['reload'] = False
-    state['dim'] = '[1000]' #5000
+    state['dim'] = '[1200]' #5000
     state['activ'] = 'lambda x: TT.maximum(x, 0)'
     state['bias'] = 0.
     state['exclude_powers'] = False
     state['maxout_part'] = 1.
 
-    state['nlayers'] = 3
+    state['nlayers'] = 1
     state['weight_init_fn'] = 'sample_weights_orth'
-    state['weight_scale'] = 0.01
+    state['weight_scale'] = 0.005
 
-    state['lr'] = .15
+    state['lr'] = 1.0
     state['minlr'] = 1e-8
-    state['momentum'] = 5.0
+    #state['momentum'] = 5.0
 
     state['switch'] = 400
 
-    state['cutoff'] = 0.
+    state['cutoff'] = 1.0
     state['cutoff_rescale_length'] = 0.
 
     state['lr_adapt'] = False
@@ -265,28 +249,31 @@ if __name__=='__main__':
     state['lr_tau'] = 500.
 
     state['patience'] = -1
+
     state['divide_lr'] = 1.#2.
     state['cost_threshold'] = 1.0002
 
     state['max_norm'] = 0.
 
-    state['bs']  = 2400
+    state['bs']  = 200
     state['reset'] = -1
 
-    state['loopIters'] = 500 * 500
-    state['timeStop'] = 24*60*7
+    state['loopIters'] = 50000 * 50000
+    state['timeStop'] = 24*6000*7
     state['minerr'] = -1
     state['switch'] = 500
 
     state['seed'] = 123
     state['correction'] = 1.0
-    state['trainFreq'] = 2
-    state['validFreq'] = 100
-    state['hookFreq'] =  2
-    state['saveFreq'] = 500
+    state['trainFreq'] = 1000
+    state['validFreq'] = 3000
+    state['hookFreq'] =  200000
+    state['saveFreq'] = 50000
+    state['adaeps'] = 1e-6
+    state['adarho'] = 0.95
 
-    state['out_sparse'] = -1
-    state['out_bias_scale'] = -0.5
+    state['out_sparse'] = 0
+    state['out_bias_scale'] = 0.0
     state['prefix'] = 'model_wmlp_'
     state['overwrite'] = 1
 
