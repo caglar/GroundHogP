@@ -29,8 +29,7 @@ def get_data(state):
     def out_format_valid (x, y, r):
         return {'x':x, 'y' :y, 'reset': r}
 
-    train_data = LMIterator(
-            batch_size=state['bs'],
+    train_data = LMIterator(batch_size=state['bs'],
             path="/data/lisa/data/PennTreebankCorpus/pentree_char_and_word.npz",
             stop=-1,
             seq_len = state['seqlen'],
@@ -40,30 +39,28 @@ def get_data(state):
             output_format = out_format,
             can_fit=True)
 
-    valid_data = LMIterator(
-            batch_size=1,
-            path="/data/lisa/data/PennTreebankCorpus/pentree_char_and_word.npz",
-            stop=-1,
-            use_infinite_loop=False,
-            seq_len= state['seqlen'],
-            mode="valid",
-            chunks=state["chunks"],
-            shift = 1,
-            output_format = out_format_valid,
-            can_fit=True)
+    valid_data = LMIterator(batch_size=1,
+                            path="/data/lisa/data/PennTreebankCorpus/pentree_char_and_word.npz",
+                            stop=-1,
+                            use_infinite_loop=False,
+                            seq_len= state['seqlen'],
+                            mode="valid",
+                            chunks=state["chunks"],
+                            shift = 1,
+                            output_format = out_format_valid,
+                            can_fit=True)
 
-    test_data = LMIterator(
-            batch_size=1,
-            path="/data/lisa/data/PennTreebankCorpus/pentree_char_and_word.npz",
-            stop=-1,
-            use_infinite_loop=False,
-            allow_short_sequences=True,
-            seq_len= state['seqlen'],
-            mode="test",
-            chunks=state["chunks"],
-            shift = 1,
-            output_format = out_format_valid,
-            can_fit=True)
+    test_data = LMIterator(batch_size=1,
+                           path="/data/lisa/data/PennTreebankCorpus/pentree_char_and_word.npz",
+                           stop=-1,
+                           use_infinite_loop=False,
+                           allow_short_sequences=True,
+                           seq_len= state['seqlen'],
+                           mode="test",
+                           chunks=state["chunks"],
+                           shift = 1,
+                           output_format = out_format_valid,
+                           can_fit=True)
 
     return train_data, valid_data, test_data
 

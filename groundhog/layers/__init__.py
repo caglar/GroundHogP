@@ -6,7 +6,9 @@ from rec_layers import  \
         RecurrentMultiLayerShortPath, \
         RecurrentMultiLayerShortPathInp, \
         RecurrentMultiLayerShortPathInpAll, \
-        GatedMemoryLayer
+        GatedMemoryLayer, \
+        GatedUnboundedLayer, \
+        MemoryInputLayer
 
 from rconv_layers import RecursiveConvolutionalLayer
 from ff_layers import DropOp

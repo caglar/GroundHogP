@@ -176,9 +176,9 @@ def jobman(state, channel):
     reset = TT.scalar('reset')
 
     if state['bs'] > 1:
-        h0 = TT.alloc(numpy.float32(0), state['bs'], state['nhids'])
+        h0 = TT.alloc(numpy.float32(0.01), state['bs'], state['nhids'])
     else:
-        h0 = TT.alloc(numpy.float32(0), state['nhids'])
+        h0 = TT.alloc(numpy.float32(0.01), state['nhids'])
 
     emb_words_rep = emb_words(tx)
 
@@ -201,9 +201,10 @@ def jobman(state, channel):
 
     reset = TT.scalar('reset')
 
-    h0 = TT.alloc(numpy.float32(0), state['nhids'])
+    h0 = TT.alloc(numpy.float32(0.01), state['nhids'])
     h0 = theano.shared(numpy.zeros((state['nhids'],),
-                       dtype=theano.config.floatX),'h0')
+                       dtype=theano.config.floatX) + 0.01,
+                       'h0')
 
     rec_layer = rec(state_below=state_at_below(vx, use_noise=False),
                     nsteps = vx.shape[0],

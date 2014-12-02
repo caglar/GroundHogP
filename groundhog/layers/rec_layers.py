@@ -1188,6 +1188,324 @@ class RecurrentLayer(Layer):
 
         return self.out
 
+class MemoryInputLayer(Layer):
+    """
+        Standard recurrent layer with gates.
+        See arXiv verion of our paper.
+    """
+    def __init__(self, rng,
+                 n_hids=500,
+                 scale=.01,
+                 sparsity = -1,
+                 activation = TT.tanh,
+                 activ_noise=0.,
+                 weight_noise=False,
+                 bias_fn='init_bias',
+                 bias_scale = 0.,
+                 dropout = 1.,
+                 init_fn='sample_weights',
+                 kind_reg = None,
+                 grad_scale = 1.,
+                 memory_man_activation = TT.tanh,
+                 memory_bank_sizes = [],
+                 profile = 0,
+                 name=None):
+        """
+        :type rng: numpy random generator
+        :param rng: numpy random generator
+
+        :type n_in: int
+        :param n_in: number of inputs units
+
+        :type n_hids: int
+        :param n_hids: Number of hidden units on each layer of the MLP
+
+        :type activation: string/function or list of
+        :param activation: Activation function for the embedding layers. If
+            a list it needs to have a value for each layer. If not, the same
+            activation will be applied to all layers
+
+        :type scale: float or list of
+        :param scale: depending on the initialization function, it can be
+            the standard deviation of the Gaussian from which the weights
+            are sampled or the largest singular value. If a single value it
+            will be used for each layer, otherwise it has to have one value
+            for each layer
+
+        :type sparsity: int or list of
+        :param sparsity: if a single value, it will be used for each layer,
+            otherwise it has to be a list with as many values as layers. If
+            negative, it means the weight matrix is dense. Otherwise it
+            means this many randomly selected input units are connected to
+            an output unit
+
+
+        :type weight_noise: bool
+        :param weight_noise: If true, the model is used with weight noise
+            (and the right shared variable are constructed, to keep track of the
+            noise)
+
+        :type dropout: float
+        :param dropout: the probability with which hidden units are dropped
+            from the hidden layer. If set to 1, dropout is not used
+
+        :type init_fn: string or function
+        :param init_fn: function used to initialize the weights of the
+            layer. We recommend using either `sample_weights_classic` or
+            `sample_weights` defined in the utils
+
+        :type bias_fn: string or function
+        :param bias_fn: function used to initialize the biases. We recommend
+            using `init_bias` defined in the utils
+
+        :type bias_scale: float
+        :param bias_scale: argument passed to `bias_fn`, depicting the scale
+            of the initial bias
+
+        :type grad_scale: float or theano scalar
+        :param grad_scale: factor with which the gradients with respect to
+            the parameters of this layer are scaled. It is used for
+            differentiating between the different parameters of a model.
+
+        :type reseting: bool
+        :param reseting: If true, a reset gate is used
+
+        :type gater_activation: string or function
+        :param name: The activation function of the update gate
+
+        :type reseter_activation: string or function
+        :param name: The activation function of the reset gate
+
+        :type name: string
+        :param name: name of the layer (used to name parameters). NB: in
+            this library names are very important because certain parts of the
+            code relies on name to disambiguate between variables, therefore
+            each layer should have a unique name.
+
+        """
+
+        self.grad_scale = grad_scale
+
+        if type(init_fn) is str or type(init_fn) is unicode:
+            init_fn = eval(init_fn)
+
+        if type(bias_fn) is str or type(bias_fn) is unicode:
+            bias_fn = eval(bias_fn)
+
+        if type(activation) is str or type(activation) is unicode:
+            activation = eval(activation)
+
+        if type(memory_bank_sizes) is str or type(memory_bank_sizes) is unicode:
+            memory_bank_sizes = eval(memory_bank_sizes)
+
+        if type(memory_man_activation) is str or type(memory_man_activation) is unicode:
+            memory_man_activation = eval(memory_man_activation)
+
+        assert len(memory_bank_sizes) > 0, "Size of the memory bank should be greater than 0."
+
+        self.scale = scale
+        self.sparsity = sparsity
+        self.activation = activation
+        self.n_hids = n_hids
+        self.bias_scale = bias_scale
+        self.bias_fn = bias_fn
+        self.init_fn = init_fn
+        self.weight_noise = weight_noise
+        self.activ_noise = activ_noise
+        self.profile = profile
+        self.dropout = dropout
+        self.memory_bank_sizes = memory_bank_sizes
+        self.memory_man_activation = memory_man_activation
+
+        assert rng is not None, "random number generator should not be empty!"
+
+        super(MemoryInputLayer, self).__init__(self.n_hids,
+                                               self.n_hids,
+                                               rng, name)
+
+        self.n_in = memory_bank_sizes[0]
+        self.trng = RandomStreams(self.rng.randint(int(1e6)))
+        self.params = []
+        self._init_params()
+
+    def _init_params(self):
+
+        self.M = theano.shared(self.rng.uniform(-0.001,
+                               0.001,
+                               (self.memory_bank_sizes[0],
+                                self.n_hids,
+                                self.n_hids)).astype("float32"),
+                               name = "M_%s" % self.name)
+
+        self.W_ah = theano.shared(sample_weights_classic(self.n_hids,
+                                                         self.memory_bank_sizes[0],
+                                                         self.sparsity,
+                                                         self.scale,
+                                                         rng = self.rng),
+                                                         name = "W_ah_%s" % self.name)
+
+        self.params = [self.W_ah, self.M]
+        self.b_hh = theano.shared(numpy.zeros((self.memory_bank_sizes[0]),
+                                  dtype = "float32"),
+                                  name = "b_hh_%s" % self.name)
+
+        self.params.append(self.b_hh)
+
+        self.params_grad_scale = [self.grad_scale for x in self.params]
+        self.restricted_params = [x for x in self.params]
+
+        if self.weight_noise:
+            self.nW_hh = theano.shared(self.W_hh.get_value()*0,
+                                      name = 'noise_'+self.W_hh.name)
+
+            self.nW_ah = theano.shared(self.W_ah.get_value()*0,
+                                       name = 'noise_'+self.W_ah.name)
+
+            self.noise_params = [self.nW_hh,self.nW_ah]
+            self.noise_params_shape_fn = [constant_shape(x.get_value().shape)
+                                            for x in self.noise_params]
+
+    def step_fprop(self,
+                   state_below,
+                   mask = None,
+                   state_before = None,
+                   use_noise=True,
+                   no_noise_bias = False):
+        """
+        Constructs the computational graph of this layer.
+
+        :type state_below: theano variable
+        :param state_below: the input to the layer
+
+        :type mask: None or theano variable
+        :param mask: mask describing the length of each sequence in a
+            minibatch
+
+        :type state_before: theano variable
+        :param state_before: the previous value of the hidden state of the
+            layer
+
+        :type gater_below: theano variable
+        :param gater_below: the input to the update gate
+
+        :type reseter_below: theano variable
+        :param reseter_below: the input to the reset gate
+
+        :type use_noise: bool
+        :param use_noise: flag saying if weight noise should be used in
+            computing the output of this layer
+
+        :type no_noise_bias: bool
+        :param no_noise_bias: flag saying if weight noise should be added to
+            the bias as well
+        """
+
+        rval = []
+        if self.weight_noise and use_noise and self.noise_params:
+            W_ah = self.W_ah
+
+        else:
+            W_ah = self.W_ah
+
+        ##The memory manager, it chooses to which locations
+        ##in the memory to look at.
+        mem_man = self.memory_man_activation(TT.dot(state_before, W_ah) + state_below + self.b_hh)
+
+        if mem_man.ndim > 1:
+            if self.M.ndim == 2:
+                M = self.M.dimshuffle('x', 0, 1)
+            else:
+                M = self.M.dimshuffle('x', 0, 1, 2)
+            mem_man = mem_man.dimshuffle(0, 1, 'x', 'x')
+            mem_t = (mem_man * M).sum(1)
+        else:
+            mem_man = mem_man.dimshuffle(0, 'x')
+            mem_t = (mem_man * self.M).sum(0)
+
+        # optionally reset the hidden state.
+        # Feed the input to obtain potential new state.
+        if state_before.ndim == 2:
+            state_before = state_before.dimshuffle(0, 'x', 1)
+            preactiv = state_before * mem_t
+            preactiv = preactiv.sum(1)
+        elif state_before.ndim == 1:
+            state_before = state_before.dimshuffle('x', 'x', 0)
+            preactiv = state_before * mem_t
+            preactiv = preactiv.sum((0, 1))
+
+        h = self.activation(preactiv)
+
+        # Update gate:
+        # optionally reject the potential new state and use the new one.
+
+        if self.activ_noise and use_noise:
+            h = h + self.trng.normal(h.shape, avg=0, std=self.activ_noise, dtype=h.dtype)
+
+        if mask is not None:
+            if h.ndim ==2 and mask.ndim==1:
+                mask = mask.dimshuffle(0,'x')
+            h = mask * h + (1 - mask) * state_before
+
+        return h
+
+
+    def fprop(self,
+              state_below,
+              mask=None,
+              init_state=None,
+              nsteps=None,
+              batch_size=None,
+              use_noise=True,
+              truncate_gradient=-1,
+              no_noise_bias = False):
+
+        if theano.config.floatX=='float32':
+            floatX = numpy.float32
+        else:
+            floatX = numpy.float64
+
+        if nsteps is None:
+            nsteps = state_below.shape[0]
+            if batch_size and batch_size != 1:
+                nsteps = nsteps / batch_size
+
+        if batch_size is None and state_below.ndim == 3:
+            batch_size = state_below.shape[1]
+
+        if state_below.ndim == 2 and \
+           (not isinstance(batch_size,int) or batch_size > 1):
+            state_below = state_below.reshape((nsteps, batch_size, self.n_in))
+
+        if not init_state:
+            if not isinstance(batch_size, int) or batch_size != 1:
+                init_state = TT.alloc(floatX(0), batch_size, self.n_hids)
+            else:
+                init_state = TT.alloc(floatX(0), self.n_hids)
+
+        if mask:
+            inps = [state_below, mask]
+            fn = lambda x, y, z: self.step_fprop(x, y, z, use_noise=use_noise,
+                                                 no_noise_bias=no_noise_bias)
+        else:
+            inps = [state_below]
+            fn = lambda tx, ty: self.step_fprop(tx, None, ty,
+                                                use_noise=use_noise,
+                                                no_noise_bias=no_noise_bias)
+
+        rval, updates = theano.scan(fn,
+                                    sequences = inps,
+                                    outputs_info = [init_state],
+                                    name='layer_%s'%self.name,
+                                    profile=self.profile,
+                                    truncate_gradient = truncate_gradient,
+                                    n_steps = nsteps)
+
+        new_h = rval
+        self.out = rval
+        self.rval = rval
+        self.updates =updates
+        return self.out
+
 
 class GatedMemoryLayer(Layer):
     """
@@ -1336,6 +1654,7 @@ class GatedMemoryLayer(Layer):
         self.reseter_activation = reseter_activation
         self.memory_bank_sizes = memory_bank_sizes
         self.memory_man_activation = memory_man_activation
+        self.n_in = self.memory_bank_sizes[0]
 
         assert rng is not None, "random number generator should not be empty!"
 
@@ -1415,11 +1734,8 @@ class GatedMemoryLayer(Layer):
 
     def step_fprop_orig(self,
                         state_below,
-                        state_at_below=None,
                         mask = None,
                         state_before = None,
-                        gater_below = None,
-                        reseter_below = None,
                         use_noise=True,
                         no_noise_bias = False):
         """
@@ -1469,7 +1785,7 @@ class GatedMemoryLayer(Layer):
 
         ##men_man is the memory manager, it chooses to which locations
         ##in the memory to look at.
-        mem_man = self.memory_man_activation(TT.dot(state_before, W_ah) + state_below)
+        mem_man = self.memory_man_activation(TT.dot(state_before, W_ah) + state_below + self.b_hh)
 
         if mem_man.ndim > 1:
             if self.M.ndim == 2:
@@ -1480,32 +1796,19 @@ class GatedMemoryLayer(Layer):
             mem_man = mem_man.dimshuffle(0, 'x')
             mem_t = (mem_man * self.M).sum(0)
 
-        # Reset gate:
-        # optionally reset the hidden state.
-
-        if self.reseting and reseter_below:
-            reseter = self.reseter_activation(TT.dot(state_before, R_hh) +
-                                              reseter_below)
-            reseted_state_before = reseter * mem_t + state_before
-        else:
-            reseted_state_before = mem_t
-
         # Feed the input to obtain potential new state.
-        preactiv = TT.dot(reseted_state_before, W_hh) + self.b_hh #+ state_below
+        preactiv = TT.dot(state_before, mem_t)
         h = self.activation(preactiv)
 
         # Update gate:
         # optionally reject the potential new state and use the new one.
-        gater = self.gater_activation(TT.dot(state_before, G_hh) + gater_below)
-        h = gater * h + (1 - gater) * state_before
-
         if self.activ_noise and use_noise:
             h = h + self.trng.normal(h.shape, avg=0, std=self.activ_noise, dtype=h.dtype)
 
         if mask is not None:
             if h.ndim ==2 and mask.ndim==1:
                 mask = mask.dimshuffle(0,'x')
-            h = mask * h + (1-mask) * state_before
+            h = mask * h + (1 - mask) * state_before
 
         return h
 
@@ -1714,6 +2017,318 @@ class GatedMemoryLayer(Layer):
                                     outputs_info = [init_state],
                                     name='layer_%s'%self.name,
                                     profile=self.profile,
+                                    truncate_gradient = truncate_gradient,
+                                    n_steps = nsteps)
+
+        new_h = rval
+        self.out = rval
+        self.rval = rval
+        self.updates =updates
+
+        return self.out
+
+
+class GatedUnboundedLayer(Layer):
+    """
+        Standard recurrent layer with gates.
+        See arXiv verion of our paper.
+    """
+    def __init__(self, rng,
+                 n_hids=500,
+                 scale=0.01,
+                 sparsity = -1,
+                 outbound_activation = TT.tanh,
+                 activ_noise=0.0,
+                 batch_size=1,
+                 weight_noise=False,
+                 bias_fn='init_bias',
+                 bias_scale=0.0,
+                 dropout=1.0,
+                 init_fn='sample_weights',
+                 kind_reg=None,
+                 grad_scale=1.,
+                 learn_init_state = True,
+                 input_selector_activation = TT.tanh,
+                 profile = 0,
+                 name=None):
+        """
+        :type rng: numpy random generator
+        :param rng: numpy random generator
+
+        :type n_in: int
+        :param n_in: number of inputs units
+
+        :type n_hids: int
+        :param n_hids: Number of hidden units on each layer of the MLP
+
+        :type activation: string/function or list of
+        :param activation: Activation function for the embedding layers. If
+            a list it needs to have a value for each layer. If not, the same
+            activation will be applied to all layers
+
+        :type scale: float or list of
+        :param scale: depending on the initialization function, it can be
+            the standard deviation of the Gaussian from which the weights
+            are sampled or the largest singular value. If a single value it
+            will be used for each layer, otherwise it has to have one value
+            for each layer
+
+        :type sparsity: int or list of
+        :param sparsity: if a single value, it will be used for each layer,
+            otherwise it has to be a list with as many values as layers. If
+            negative, it means the weight matrix is dense. Otherwise it
+            means this many randomly selected input units are connected to
+            an output unit
+
+
+        :type weight_noise: bool
+        :param weight_noise: If true, the model is used with weight noise
+            (and the right shared variable are constructed, to keep track of the
+            noise)
+
+        :type dropout: float
+        :param dropout: the probability with which hidden units are dropped
+            from the hidden layer. If set to 1, dropout is not used
+
+        :type init_fn: string or function
+        :param init_fn: function used to initialize the weights of the
+            layer. We recommend using either `sample_weights_classic` or
+            `sample_weights` defined in the utils
+
+        :type bias_fn: string or function
+        :param bias_fn: function used to initialize the biases. We recommend
+            using `init_bias` defined in the utils
+
+        :type bias_scale: float
+        :param bias_scale: argument passed to `bias_fn`, depicting the scale
+            of the initial bias
+
+        :type grad_scale: float or theano scalar
+        :param grad_scale: factor with which the gradients with respect to
+            the parameters of this layer are scaled. It is used for
+            differentiating between the different parameters of a model.
+
+        :type reseting: bool
+        :param reseting: If true, a reset gate is used
+
+        :type gater_activation: string or function
+        :param name: The activation function of the update gate
+
+        :type reseter_activation: string or function
+        :param name: The activation function of the reset gate
+
+        :type name: string
+        :param name: name of the layer (used to name parameters). NB: in
+            this library names are very important because certain parts of the
+            code relies on name to disambiguate between variables, therefore
+            each layer should have a unique name.
+
+        """
+
+        self.grad_scale = grad_scale
+
+        if type(init_fn) is str or type(init_fn) is unicode:
+            init_fn = eval(init_fn)
+
+        if type(bias_fn) is str or type(bias_fn) is unicode:
+            bias_fn = eval(bias_fn)
+
+        if type(outbound_activation) is str or type(outbound_activation) is unicode:
+            outbound_activation = eval(outbound_activation)
+
+        if type(input_selector_activation) is str or type(input_selector_activation) is unicode:
+            input_selector_activation = eval(input_selector_activation)
+
+        self.scale = scale
+        self.outbound_activation = outbound_activation
+        self.input_selector_activation = input_selector_activation
+        self.batch_size = batch_size
+
+        self.learn_init_state = learn_init_state
+        self.sparsity = sparsity
+        self.n_hids = n_hids
+        self.bias_scale = bias_scale
+        self.bias_fn = bias_fn
+        self.init_fn = init_fn
+        self.weight_noise = weight_noise
+        self.activ_noise = activ_noise
+        self.profile = profile
+        self.dropout = dropout
+
+        assert rng is not None, "random number generator should not be empty!"
+        super(GatedUnboundedLayer, self).__init__(self.n_hids,
+                                                  self.n_hids,
+                                                  rng, name)
+        self.params = []
+        self._init_params()
+        self.trng = RandomStreams(self.rng.randint(int(1e6)))
+
+    def _init_params(self):
+        self.W_hh = theano.shared(self.init_fn(self.n_hids,
+                                  self.n_hids,
+                                  self.sparsity,
+                                  self.scale,
+                                  rng = self.rng),
+                                  name = "W_%s"%self.name)
+
+        self.U_hh = theano.shared(self.init_fn(self.n_hids,
+                                  self.n_hids,
+                                  self.sparsity,
+                                  self.scale,
+                                  rng = self.rng),
+                                  name = "W_%s"%self.name)
+
+        self.V_hh = theano.shared(self.init_fn(self.n_hids,
+                                  self.n_hids,
+                                  self.sparsity,
+                                  self.scale,
+                                  rng = self.rng),
+                                  name = "W_%s"%self.name)
+
+        self.params = [self.W_hh, self.U_hh, self.V_hh]
+
+        self.b_hh = theano.shared(numpy.zeros((self.n_hids),
+                                              dtype = "float32"),
+                                  name = "b_hh_%s" % self.name)
+
+        if self.learn_init_state:
+            if self.batch_size <= 1:
+                self.h0 = theano.shared(self.rng.uniform(-self.scale, self.scale,
+                                       (self.n_hids,)).astype("float32"),
+                                       name="h0")
+            else:
+                self.h0 = theano.shared(self.rng.uniform(-self.scale, self.scale,
+                                       (self.batch_size, self.n_hids)).astype("float32"),
+                                       name="h0")
+
+            self.params.append(self.h0)
+
+        self.params.append(self.b_hh)
+        self.params_grad_scale = [self.grad_scale for x in self.params]
+        self.restricted_params = [x for x in self.params]
+
+        if self.weight_noise:
+            self.nW_hh = theano.shared(self.W_hh.get_value()*0,
+                                       name = 'noise_' + self.W_hh.name)
+            self.noise_params = [self.nW_hh]
+            self.noise_params_shape_fn = [constant_shape(x.get_value().shape)
+                                            for x in self.noise_params]
+
+    def step_fprop(self,
+                   state_below,
+                   mask = None,
+                   state_before = None,
+                   use_noise=True,
+                   no_noise_bias = False):
+        """
+        Constructs the computational graph of this layer.
+
+        :type state_below: theano variable
+        :param state_below: the input to the layer
+
+        :type mask: None or theano variable
+        :param mask: mask describing the length of each sequence in a
+            minibatch
+
+        :type state_before: theano variable
+        :param state_before: the previous value of the hidden state of the
+            layer
+
+        :type gater_below: theano variable
+        :param gater_below: the input to the update gate
+
+        :type reseter_below: theano variable
+        :param reseter_below: the input to the reset gate
+
+        :type use_noise: bool
+        :param use_noise: flag saying if weight noise should be used in
+            computing the output of this layer
+
+        :type no_noise_bias: bool
+        :param no_noise_bias: flag saying if weight noise should be added to
+            the bias as well
+        """
+
+        rval = []
+        W_hh = self.W_hh
+        U_hh = self.U_hh
+        V_hh = self.V_hh
+
+        if state_below.ndim > 1:
+            proj_state_bf = TT.dot(state_before, W_hh)
+            inp_selector = self.input_selector_activation(state_below + proj_state_bf + self.b_hh)
+            h_pre = inp_selector.dimshuffle(0, 1, 'x') * U_hh.dimshuffle('x', 0, 1) + V_hh.dimshuffle('x', 0, 1) * (1 - inp_selector.dimshuffle(0, 1, 'x'))
+        else:
+            inp_selector = self.input_selector_activation(state_below + TT.dot(state_before, W_hh) + self.b_hh)
+            h_pre = U_hh * inp_selector + V_hh * (1 - inp_selector)
+
+        if h_pre.ndim > 1:
+            h = self.outbound_activation(TT.batched_dot(h_pre, state_before))
+        else:
+            h = self.outbound_activation(TT.dot(h_pre, state_before))
+
+        if self.activ_noise and use_noise:
+            h = h + self.trng.normal(h.shape, avg=0, std=self.activ_noise, dtype=h.dtype)
+
+        if mask is not None:
+            if h.ndim == 2 and mask.ndim==1:
+                mask = mask.dimshuffle(0,'x')
+            h = mask * h + (1 - mask) * state_before
+
+        return TT.unbroadcast(h)
+
+    def fprop(self,
+              state_below,
+              mask=None,
+              init_state=None,
+              nsteps=None,
+              batch_size=None,
+              use_noise=True,
+              truncate_gradient=-1,
+              no_noise_bias = False):
+
+        #import ipdb; ipdb.set_trace()
+        if theano.config.floatX=='float32':
+            floatX = numpy.float32
+        else:
+            floatX = numpy.float64
+
+        if nsteps is None:
+            nsteps = state_below.shape[0]
+            if batch_size and batch_size != 1:
+                nsteps = nsteps / batch_size
+
+        if batch_size is None and state_below.ndim == 3:
+            batch_size = state_below.shape[1]
+
+        if state_below.ndim == 2 and \
+           (not isinstance(batch_size,int) or batch_size > 1):
+            state_below = state_below.reshape((nsteps, batch_size, self.n_hids))
+
+        if not init_state and not self.learn_init_state:
+            if not isinstance(batch_size, int) or batch_size != 1:
+                init_state = TT.alloc(floatX(0), batch_size, self.n_hids)
+            else:
+                init_state = TT.alloc(floatX(0), self.n_hids)
+        elif not init_state and self.learn_init_state:
+            init_state = self.h0
+
+        # FIXME: Find a way to clean this up
+        if mask:
+            inps = [state_below, mask]
+            fn = lambda x, y, z : self.step_fprop(x, y, z, use_noise=use_noise,
+                                                  no_noise_bias=no_noise_bias)
+        else:
+            inps = [state_below]
+            fn = lambda tx, ty : self.step_fprop(tx, None, ty,
+                                                 use_noise=use_noise,
+                                                 no_noise_bias=no_noise_bias)
+
+        rval, updates = theano.scan(fn,
+                                    sequences = inps,
+                                    outputs_info = [init_state],
+                                    name = 'layer_%s' % self.name,
+                                    profile = self.profile,
                                     truncate_gradient = truncate_gradient,
                                     n_steps = nsteps)
         new_h = rval
@@ -2034,6 +2649,9 @@ class LSTMLayer(Layer):
             nsteps = state_below.shape[0]
             if batch_size and batch_size != 1:
                 nsteps = nsteps / batch_size
+
+            import ipdb; ipdb.set_trace()
+
         if batch_size is None and state_below.ndim == 3:
             batch_size = state_below.shape[1]
         if state_below.ndim == 2 and \
